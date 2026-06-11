@@ -330,9 +330,9 @@
     householdPanel.appendChild(el("h2", { text: "Your household" }));
     householdPanel.appendChild(el("p", {
       class: "sub",
-      text: "Enter your family name to label this household. It is saved in this browser and included in Excel backups.",
+      text: "Add a family name to label this household on screen, in Excel backups, and in reports. It stays on this device unless you export or sync a backup.",
     }));
-    householdPanel.appendChild(field("Family name", nameInput, "Surname or family name only — not individual member names."));
+    householdPanel.appendChild(field("Family name", nameInput, "Family or surname only — for example SMY FAMILY. Individual member names are added separately below."));
     householdPanel.appendChild(el("div", { class: "btn-row" }, [
       el("button", {
         class: "btn",
@@ -422,7 +422,7 @@
 
     const summaryPanel = el("div", { class: "panel" });
     summaryPanel.appendChild(el("h2", { text: "Household Zakat summary" }));
-    summaryPanel.appendChild(el("p", { class: "sub", text: "School: " + rules.label + " \u00b7 rates as entered \u00b7 calculated as of the Zakat baseline date" }));
+    summaryPanel.appendChild(el("p", { class: "sub", text: "School: " + rules.label + " \u00b7 using your entered rates \u00b7 calculated as of the Zakat baseline date shown in the header." }));
 
     const totalWealth = household.members.reduce((s, m) => s + m.total_wealth_inr, 0);
     const cards = el("div", { class: "cards" }, [
@@ -1118,7 +1118,7 @@
 
     const head = el("div", { class: "panel" });
     head.appendChild(el("h2", { text: "Family members & assets" }));
-    head.appendChild(el("p", { class: "sub", text: "Add each household member, then record their assets and Zakat payments." }));
+    head.appendChild(el("p", { class: "sub", text: "Add each person in your household, then expand their section to record assets and Zakat payments." }));
     head.appendChild(el("button", { class: "btn", text: "Add family member", onclick: () => memberForm() }));
     panel.appendChild(head);
 
@@ -1275,8 +1275,8 @@
 
   // --- Member form ---
   function memberForm(existing) {
-    const name = el("input", { type: "text", value: existing ? existing.name : "", placeholder: "e.g. Altamash, Afham, Athar, Abu Bakr" });
-    const rel = el("input", { type: "text", value: existing ? existing.relationship : "", placeholder: "e.g. Self, Spouse, Son" });
+    const name = el("input", { type: "text", value: existing ? existing.name : "", placeholder: "Full name, e.g. Altamash" });
+    const rel = el("input", { type: "text", value: existing ? existing.relationship : "", placeholder: "Relationship, e.g. Self, Spouse, Son" });
     const body = el("form", null, [
       field("Name", name),
       field("Relationship", rel),
@@ -1305,7 +1305,7 @@
     if (!existing) cat.value = "Cash";
     else if (existing.category) cat.value = existing.category;
 
-    const desc = el("input", { type: "text", value: existing ? existing.description || "" : "", placeholder: "Description" });
+    const desc = el("input", { type: "text", value: existing ? existing.description || "" : "", placeholder: "Short label, e.g. Savings account or Gold chain" });
     const valuation = el("input", { type: "number", step: "0.01", value: existing && existing.valuation_inr != null ? existing.valuation_inr : "" });
     const weight = el("input", { type: "number", step: "0.001", value: existing && existing.weight_grams != null ? existing.weight_grams : "" });
     const puritySelect = el("select");
@@ -1532,8 +1532,8 @@
 
   // --- Payment form ---
   function paymentForm(memberId, existing) {
-    const given = el("input", { type: "text", value: existing ? existing.given_to || "" : "", placeholder: "e.g. Local masjid, relative" });
-    const amount = el("input", { type: "number", step: "0.01", value: existing && existing.amount_inr != null ? existing.amount_inr : "", placeholder: "0.00" });
+    const given = el("input", { type: "text", value: existing ? existing.given_to || "" : "", placeholder: "Who received it, e.g. Local masjid" });
+    const amount = el("input", { type: "number", step: "0.01", value: existing && existing.amount_inr != null ? existing.amount_inr : "", placeholder: "Amount in INR" });
     const body = el("form", null, [field("Given to", given), field("Amount (INR)", amount)]);
     const save = el("button", { class: "btn", text: existing ? "Save payment" : "Add payment", onclick: (e) => {
       e.preventDefault();
@@ -1872,8 +1872,8 @@
           maxlength: "64",
           autocomplete: "family-name",
         });
-        actionPanel.appendChild(el("p", { class: "help", text: "Add your family name, then start your household on the Dashboard." }));
-        actionPanel.appendChild(field("Family name", familyInput, "Surname or family name for this household."));
+        actionPanel.appendChild(el("p", { class: "help", text: "Optional: add your family name now, then begin adding members on the Dashboard." }));
+        actionPanel.appendChild(field("Family name", familyInput, "Family or surname only — for example SMY FAMILY."));
         actionPanel.appendChild(el("button", {
           class: "btn block",
           text: "Start with empty household",
@@ -1901,7 +1901,7 @@
     const body = el("div", { class: "welcome-body" }, [
       el("p", {
         class: "sub",
-        text: "Your zakat data stays in this browser unless you choose to open a backup. Pick one option below — Google Drive is only contacted if you select it.",
+        text: "Your Zakat data stays in this browser until you choose to open or back up a file. Pick how you would like to begin — Google Drive is only used if you select that option.",
       }),
       choices,
       actionPanel,

@@ -486,6 +486,22 @@ h2.title {
 .sub {
   margin: 0;
   color: var(--ink-muted);
+  line-height: 1.7;
+  font-size: 1.02rem;
+}
+
+.section-top .sub,
+.heritage-intro .sub,
+.policy-intro .sub {
+  margin-top: 0.5rem;
+}
+
+h1.title {
+  margin: 0 0 0.75rem;
+  font-family: "DM Serif Display", Georgia, serif;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.1;
+  font-weight: 400;
 }
 
 /* About */
@@ -711,13 +727,17 @@ h2.title {
 }
 
 .policy-intro {
-  margin-bottom: 2rem;
+  margin-bottom: 2.5rem;
   max-width: 720px;
 }
 
+.policy-intro .sub {
+  margin-top: 0.65rem;
+}
+
 .policy-card {
-  margin-bottom: 1rem;
-  padding: 1.4rem 1.5rem;
+  margin-bottom: 1.25rem;
+  padding: 1.5rem 1.65rem;
   border-radius: var(--radius);
   background: var(--surface);
   border: 1px solid rgba(15, 26, 26, 0.08);
@@ -735,12 +755,12 @@ h2.title {
 .policy-card p,
 .policy-card li {
   color: var(--ink-muted);
-  font-size: 0.98rem;
-  line-height: 1.7;
+  font-size: 1rem;
+  line-height: 1.75;
 }
 
 .policy-card p {
-  margin: 0 0 0.85rem;
+  margin: 0 0 1rem;
 }
 
 .policy-card p:last-child {
@@ -773,8 +793,12 @@ h2.title {
 }
 
 .heritage-intro {
-  margin-bottom: 2rem;
-  max-width: 560px;
+  margin-bottom: 2.5rem;
+  max-width: 620px;
+}
+
+.heritage-intro .sub {
+  margin-top: 0.65rem;
 }
 
 .family-name-band {
@@ -800,9 +824,11 @@ h2.title {
 }
 
 .family-name-band .sub {
-  margin: 0 0 1.75rem;
-  max-width: 680px;
-  color: rgba(255, 255, 255, 0.78);
+  margin: 0 0 2rem;
+  max-width: 720px;
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.75;
+  font-size: 1rem;
 }
 
 .family-name-band .sub strong {
