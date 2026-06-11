@@ -680,21 +680,20 @@
     // Rates for the selected year
     panel.appendChild(yearlyRatesForYear(year, yearRates, rmap));
 
-    // Per-member asset tables
+    // Per-member asset tables (collapsed by default)
     members.forEach((m) => {
       const memberRows = allRows.filter((r) => r.member.id === m.id);
       if (!memberRows.length) return;
-      const block = el("div", { class: "panel" });
       const payTotal = (m.zakat_payments || []).reduce((s, p) => s + ZK.num(p.amount_inr), 0);
-      block.appendChild(el("h2", { text: m.name }));
-      block.appendChild(el("p", { class: "sub", text: (m.relationship || "Family") + " \u00b7 all-time payments recorded: " + ZK.fmtINR(payTotal) }));
-
+      const sectionBody = [
+        el("p", { class: "sub", text: (m.relationship || "Family") + " \u00b7 all-time payments recorded: " + ZK.fmtINR(payTotal) }),
+      ];
       const rows = memberRows.map((r) => yearlyAssetRow(r, year));
       const thead = el("thead", null, el("tr", null, [
         th("Category"), th("Description"), th(year + " value", true), th("Status"), th("Record balance"), th("", true),
       ]));
-      block.appendChild(el("div", { class: "table-wrap" }, el("table", null, [thead, el("tbody", null, rows)])));
-      panel.appendChild(block);
+      sectionBody.push(el("div", { class: "table-wrap" }, el("table", null, [thead, el("tbody", null, rows)])));
+      panel.appendChild(collapsible(m.name + " \u2014 " + memberRows.length + " asset(s)", sectionBody, false));
     });
   }
 
@@ -1072,7 +1071,7 @@
 
     members.forEach((m) => {
       const summary = ZK.computeMemberZakat(m, m.assets || [], m.zakat_payments || [], rates, madhab, baseline);
-      const block = el("div", { class: "member-block", "data-collapsed": "false" });
+      const block = el("div", { class: "member-block", "data-collapsed": "true" });
 
       const headToggle = el("button", { type: "button", class: "member-head-toggle" }, [
         el("span", { class: "member-chevron", text: "\u25BE" }),
@@ -2075,7 +2074,7 @@
     root.appendChild(collapsible("About this app", [
       html("p", "Household Zakat calculator for families: add <strong>family members</strong>, record <strong>assets</strong> in INR, set <strong>market rates</strong>, and see <strong>due, paid, and remaining</strong> on the dashboard. On first open, choose an Excel backup from your computer or Google Drive. The <strong>Backup</strong> tab handles export and Drive sync. Everything runs in your browser; data stays on your device."),
       html("ul", "<li><strong>Not a fatwa</strong> \u2014 confirm with your scholar.</li><li><strong>2.5%</strong> on zakatable wealth at/above nisab; madhhab rules for jewelry and debts.</li><li><strong>Zakat baseline:</strong> first Friday of Ramadan (shown in the header).</li>"),
-    ], true));
+    ]));
 
     root.appendChild(collapsible("What is Zakat?", [
       el("p", { class: "arabic", lang: "ar", dir: "rtl", text: "\u0632\u0643\u0627\u0629" }),
