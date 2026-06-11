@@ -1494,7 +1494,8 @@
       el("div", {
         class: "setup-body",
         html: "1. <em>Credentials</em> → Web client → <em>Authorized JavaScript origins</em>: <code>" + Drive.getPageOrigin() + "</code><br>" +
-          "2. <em>OAuth consent screen</em> → <em>Test users</em> → add each family Gmail (e.g. <code>smy.altamash@gmail.com</code>).",
+          "2. <em>OAuth consent screen</em> → <em>Test users</em> → add each family Gmail (e.g. <code>smy.altamash@gmail.com</code>).<br>" +
+          "3. Privacy policy: <a href=\"../privacy.html\" target=\"_blank\" rel=\"noopener noreferrer\">atharsmy.com/privacy.html</a>",
       }),
     ]));
 

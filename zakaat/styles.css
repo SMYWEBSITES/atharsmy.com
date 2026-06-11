@@ -36,6 +36,10 @@ body {
   max-width: 1080px;
   margin: 0 auto;
   padding: 8px 20px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .site-link {
@@ -50,6 +54,12 @@ body {
 
 .site-link:hover {
   color: #fff;
+}
+
+.site-link-muted {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.85;
 }
 
 h1, h2, h3 { margin: 0; }

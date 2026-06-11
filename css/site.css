@@ -698,6 +698,64 @@ h2.title {
   border: 0;
 }
 
+/* Privacy policy */
+.policy-page {
+  padding: calc(var(--header-h) + 2.5rem) 0 3rem;
+}
+
+.policy-intro {
+  margin-bottom: 2rem;
+  max-width: 720px;
+}
+
+.policy-card {
+  margin-bottom: 1rem;
+  padding: 1.4rem 1.5rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid rgba(15, 26, 26, 0.08);
+  box-shadow: 0 10px 30px rgba(15, 26, 26, 0.05);
+}
+
+.policy-card h2 {
+  margin: 0 0 0.75rem;
+  font-family: "DM Serif Display", Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.policy-card p,
+.policy-card li {
+  color: var(--ink-muted);
+  font-size: 0.98rem;
+  line-height: 1.7;
+}
+
+.policy-card p {
+  margin: 0 0 0.85rem;
+}
+
+.policy-card p:last-child {
+  margin-bottom: 0;
+}
+
+.policy-card ul {
+  margin: 0 0 0.85rem;
+  padding-left: 1.25rem;
+}
+
+.policy-card li {
+  margin-bottom: 0.35rem;
+}
+
+.policy-card code {
+  font-size: 0.9em;
+  background: var(--surface-2);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
 /* Family history page */
 .heritage-page {
   padding: calc(var(--header-h) + 2.5rem) 0 3rem;
