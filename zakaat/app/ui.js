@@ -506,13 +506,14 @@
     const zRows = summaries.map((s) => el("tr", null, [
       el("td", { text: s.member_name }),
       el("td", null, el("span", { class: "pill " + (s.is_eligible ? "green" : "gray"), text: s.is_eligible ? "Eligible" : "Below nisab" })),
+      el("td", { class: "num", text: ZK.fmtINR(s.total_wealth_inr) }),
       el("td", { class: "num", text: ZK.fmtINR(s.nisab_threshold_inr) }),
       el("td", { class: "num", text: ZK.fmtINR(s.zakat_due_inr) }),
       el("td", { class: "num", text: ZK.fmtINR(s.total_paid_inr) }),
       el("td", { class: "num", text: ZK.fmtINR(Math.max(0, s.remaining_inr)) }),
     ]));
     zp.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [
-      el("thead", null, el("tr", null, [th("Member"), th("Status"), th("Nisab", true), th("Zakat amount", true), th("Paid", true), th("Remaining", true)])),
+      el("thead", null, el("tr", null, [th("Member"), th("Status"), th("Wealth", true), th("Nisab", true), th("Zakat amount", true), th("Paid", true), th("Remaining", true)])),
       el("tbody", null, zRows),
     ]))));
     panel.appendChild(zp);
@@ -530,7 +531,7 @@
         const sectionBody = [];
         sectionBody.push(memberBreakdownNode(s));
         sectionBody.push(renderTrendPanel([m], madhab, { bare: true }));
-        mp.appendChild(collapsible(m.name + " \u2014 " + ZK.fmtINR(s.zakat_due_inr), sectionBody, false));
+        mp.appendChild(collapsible(m.name + " \u2014 Wealth " + ZK.fmtINR(s.total_wealth_inr) + " \u00b7 Zakat " + ZK.fmtINR(s.zakat_due_inr), sectionBody, false));
       });
       panel.appendChild(mp);
     }
@@ -1077,7 +1078,7 @@
         el("span", { class: "member-chevron", text: "\u25BE" }),
         el("div", null, [
           el("div", { class: "name", text: m.name }),
-          el("div", { class: "muted", style: "font-size:12px", text: m.relationship + " \u00b7 Zakat amount: " + ZK.fmtINR(summary.zakat_due_inr) }),
+          el("div", { class: "muted", style: "font-size:12px", text: m.relationship + " \u00b7 Wealth: " + ZK.fmtINR(summary.total_wealth_inr) + " \u00b7 Zakat: " + ZK.fmtINR(summary.zakat_due_inr) }),
         ]),
       ]);
       headToggle.addEventListener("click", () => {
@@ -1184,7 +1185,8 @@
     ]));
     if (items.length) wrap.appendChild(el("div", { class: "bd-grid" }, items));
     wrap.appendChild(el("div", { class: "bd-total", text:
-      "Nisab (" + s.nisab_basis + ") " + ZK.fmtINR(s.nisab_wealth_inr) + " / " + ZK.fmtINR(s.nisab_threshold_inr) +
+      "Wealth " + ZK.fmtINR(s.total_wealth_inr) +
+      " \u00b7 Nisab (" + s.nisab_basis + ") " + ZK.fmtINR(s.nisab_wealth_inr) + " / " + ZK.fmtINR(s.nisab_threshold_inr) +
       " \u00b7 Due " + ZK.fmtINR(s.zakat_due_inr) + " \u00b7 Paid " + ZK.fmtINR(s.total_paid_inr) +
       " \u00b7 Remaining " + ZK.fmtINR(Math.max(0, s.remaining_inr)) }));
     if (s.hawl_pending_wealth_inr > 0) {
