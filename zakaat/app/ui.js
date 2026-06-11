@@ -115,7 +115,10 @@
     if (!Drive) return Promise.reject(new Error("Drive module not loaded."));
     if (opts.button) markDriveConnectButton(opts.button, opts.busyLabel || "Connecting\u2026");
     return Drive.connect({ interactive: true })
-      .then(opts.onSuccess)
+      .then((res) => {
+        trackEvent("drive_connect", { method: "google" });
+        return typeof opts.onSuccess === "function" ? opts.onSuccess(res) : res;
+      })
       .catch((e) => {
         if (Drive.isPopupBlockedError(e)) {
           revealDrivePopupHelp(opts.helpHost, true);
@@ -151,6 +154,7 @@
     if (!file) { toast("Choose a backup file first", "err"); return; }
     Excel.importBackupFromFile(file)
       .then((counts) => {
+        trackEvent("data_import", { source: "excel", members: counts.members, assets: counts.assets });
         closeModal();
         if (typeof done === "function") done();
         refreshAll();
@@ -236,6 +240,7 @@
           () => {
             Drive.restore(fileName)
               .then((res) => {
+                trackEvent("data_import", { source: "drive_replace", file: res.fileName, members: res.counts.members });
                 closeModal();
                 refreshAll();
                 toast("Replaced with " + res.counts.members + " member(s) from " + res.fileName, "ok");
@@ -270,7 +275,7 @@
     openModal(title, body, [no, yes]);
   }
 
-  // --- Analytics (GA4 virtual page views for in-app tabs) ---
+  // --- Analytics (GA4) ---
   const TAB_PAGE_TITLES = {
     dashboard: "Dashboard",
     analytics: "Analytics",
@@ -280,19 +285,18 @@
     guide: "About",
   };
 
+  function trackEvent(name, params) {
+    if (global.SiteAnalytics) global.SiteAnalytics.trackEvent(name, params);
+  }
+
   function trackTabView(tab) {
-    const host = location.hostname;
-    if (host === "localhost" || host === "127.0.0.1") return;
-    if (typeof global.gtag !== "function") return;
     const section = TAB_PAGE_TITLES[tab] || tab;
     const title = "Zakat Calculator — " + section;
     const path = "/zakaat/" + tab;
     document.title = title + " | S M Y ATHAR";
-    global.gtag("event", "page_view", {
-      page_title: title,
-      page_location: location.origin + path,
-      page_path: path,
-    });
+    if (global.SiteAnalytics) {
+      global.SiteAnalytics.trackPageView({ title: title, path: path, section: "Zakat Calculator" });
+    }
   }
 
   // --- Tabs ---
@@ -1753,6 +1757,7 @@
       driveOpenBtn.disabled = true;
       Drive.restore(fileName)
         .then((res) => {
+          trackEvent("data_import", { source: "drive", file: res.fileName, members: res.counts.members });
           closeModal();
           if (typeof onDone === "function") onDone();
           refreshAll();
@@ -1805,7 +1810,11 @@
         actionPanel.appendChild(el("button", {
           class: "btn block",
           text: "Start with empty household",
-          onclick: () => { closeModal(); if (typeof onDone === "function") onDone(); },
+          onclick: () => {
+            trackEvent("welcome_start", { choice: "fresh" });
+            closeModal();
+            if (typeof onDone === "function") onDone();
+          },
         }));
       }
     }
@@ -1813,6 +1822,7 @@
     choices.querySelectorAll(".welcome-choice").forEach((card) => {
       card.addEventListener("click", () => {
         selected = card.dataset.choice;
+        trackEvent("welcome_choice", { choice: selected });
         choices.querySelectorAll(".welcome-choice").forEach((c) => {
           c.classList.toggle("selected", c === card);
         });
@@ -1841,8 +1851,8 @@
     exportPanel.appendChild(el("h2", { text: "Export" }));
     exportPanel.appendChild(el("p", { class: "sub", text: "Download a full Excel backup or a readable Zakat report." }));
     exportPanel.appendChild(el("div", { class: "btn-grid" }, [
-      el("button", { class: "btn", text: "Download backup", onclick: () => { try { Excel.exportBackup(); toast("Backup downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
-      el("button", { class: "btn secondary", text: "Download report", onclick: () => { try { Excel.exportReport(); toast("Report downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
+      el("button", { class: "btn", text: "Download backup", onclick: () => { try { Excel.exportBackup(); trackEvent("backup_export", { type: "full" }); toast("Backup downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
+      el("button", { class: "btn secondary", text: "Download report", onclick: () => { try { Excel.exportReport(); trackEvent("backup_export", { type: "report" }); toast("Report downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
     ]));
     panel.appendChild(exportPanel);
     panel.appendChild(renderDrivePanel());
@@ -1953,7 +1963,10 @@
     );
     backupBtn.addEventListener("click", () =>
       busy(backupBtn, "Uploading\u2026", () =>
-        Drive.backup().then((res) => toast("Backed up to " + res.path, "ok"))
+        Drive.backup().then((res) => {
+          trackEvent("backup_export", { type: "drive", file: res.fileName });
+          toast("Backed up to " + res.path, "ok");
+        })
       )
     );
     disconnectBtn.addEventListener("click", () => { Drive.disconnect(); toast("Disconnected"); setStatus(); refreshButtons(); });
