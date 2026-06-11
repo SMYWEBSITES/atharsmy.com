@@ -9,6 +9,7 @@
   const Excel = global.ZKExcel;
   const Rates = global.ZKRates;
   const History = global.ZKHistory;
+  const Drive = global.ZKDrive;
   let baseline = null;
   let yearlySelected = null; // selected calendar year on the Yearly Review tab
 
@@ -183,6 +184,7 @@
 
     // Family & assets management lives on the same first page.
     buildFamily(panel);
+    appendBackupContent(panel);
   }
 
   // --- Analytics ---
@@ -1420,11 +1422,8 @@
     (res.warnings || []).forEach((w) => box.appendChild(el("div", { class: "notice warn", text: w })));
   }
 
-  // --- Backup & restore ---
-  function renderBackup() {
-    const panel = document.getElementById("tab-backup");
-    clear(panel);
-
+  // --- Backup & restore (dashboard + Backup tab) ---
+  function appendBackupContent(panel) {
     const p = el("div", { class: "panel" });
     p.appendChild(el("h2", { text: "Backup & restore" }));
     p.appendChild(el("p", { class: "sub", html: "Export all your data (members, assets, asset images, payments, rates) to an Excel file. Import it to restore on this or any device \u2014 it's also compatible with the server version of this app." }));
@@ -1453,12 +1452,172 @@
     } }));
     panel.appendChild(p);
     panel.appendChild(importPanel);
+    panel.appendChild(renderDrivePanel());
 
     const danger = el("div", { class: "panel" });
     danger.appendChild(el("h2", { text: "Clear all data" }));
     danger.appendChild(el("p", { class: "sub", text: "Erase everything stored in this browser. Export a backup first if you want to keep it." }));
     danger.appendChild(el("button", { class: "btn danger", text: "Clear all data", onclick: () => confirmDialog("Clear all data", "This permanently deletes all members, assets, payments and rates from this browser. Continue?", () => { Store.clearAll(); refreshAll(); toast("All data cleared"); }, "Clear everything", true) }));
     panel.appendChild(danger);
+  }
+
+  function renderBackup() {
+    const panel = document.getElementById("tab-backup");
+    clear(panel);
+    appendBackupContent(panel);
+  }
+
+  // --- Google Drive Excel backup (SMY_FAMILY/ZAKAAT/) ---
+  function renderDrivePanel() {
+    const panel = el("div", { class: "panel" });
+    panel.appendChild(el("h2", { text: "Google Drive backup" }));
+    panel.appendChild(el("p", {
+      class: "sub",
+      html: "Back up and restore the full Excel file in your Google Drive at <code>" +
+        (Drive ? Drive.folderPathLabel() : "SMY_FAMILY/ZAKAAT/") +
+        "zakaat_&lt;mon&gt;_&lt;year&gt;.xlsx</code> (e.g. <code>zakaat_jun_2026.xlsx</code>).",
+    }));
+
+    if (!Drive) {
+      panel.appendChild(el("div", { class: "notice err", text: "Drive module not loaded." }));
+      return panel;
+    }
+
+    const status = el("div", { class: "notice", text: "" });
+    function setStatus() {
+      const last = Drive.getLastSync();
+      const connected = Drive.isConnected();
+      const lastFile = Drive.getLastFileName();
+      status.className = "notice " + (connected ? "ok" : "warn");
+      status.textContent =
+        (connected ? "Connected to Google Drive. " : "Click Connect to sign in with Google. ") +
+        (lastFile ? "Last file: " + lastFile + ". " : "") +
+        (last ? "Last sync: " + new Date(last).toLocaleString() + "." : "No sync yet.");
+    }
+
+    panel.appendChild(status);
+
+    const restoreSelect = el("select");
+    restoreSelect.appendChild(el("option", { value: "", text: "Loading backups\u2026" }));
+
+    function loadBackupList() {
+      restoreSelect.innerHTML = "";
+      const current = Drive.backupFileName();
+      restoreSelect.appendChild(el("option", { value: current, text: current + " (current month)" }));
+      return Drive.listBackups()
+        .then((files) => {
+          restoreSelect.innerHTML = "";
+          const names = {};
+          files.forEach((f) => { names[f.name] = f; });
+          if (!names[current]) {
+            restoreSelect.appendChild(el("option", { value: current, text: current + " (current month, not on Drive yet)" }));
+          }
+          files.forEach((f) => {
+            const label = f.name + (f.modifiedTime ? " \u2014 " + new Date(f.modifiedTime).toLocaleString() : "");
+            restoreSelect.appendChild(el("option", { value: f.name, text: label }));
+          });
+          if (!files.length) {
+            restoreSelect.appendChild(el("option", { value: current, text: current + " (no backups on Drive yet)" }));
+          }
+        })
+        .catch(() => {
+          restoreSelect.innerHTML = "";
+          restoreSelect.appendChild(el("option", { value: current, text: current + " (connect to list backups)" }));
+        });
+    }
+
+    const connectBtn = el("button", { class: "btn", text: "Connect Google Drive" });
+    const backupBtn = el("button", { class: "btn secondary", text: "Back up to Drive" });
+    const restoreBtn = el("button", { class: "btn secondary", text: "Restore from Drive" });
+    const disconnectBtn = el("button", { class: "btn secondary", text: "Disconnect" });
+    const refreshBtn = el("button", { class: "btn secondary sm", text: "Refresh list" });
+
+    function refreshButtons() {
+      const connected = Drive.isConnected();
+      connectBtn.textContent = connected ? "Reconnect" : "Connect Google Drive";
+      disconnectBtn.style.display = connected ? "" : "none";
+    }
+
+    function busy(btn, label, fn) {
+      const prev = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = label;
+      return Promise.resolve()
+        .then(fn)
+        .catch((e) => toast(e.message || String(e), "err"))
+        .finally(() => {
+          btn.textContent = prev;
+          setStatus();
+          refreshButtons();
+        });
+    }
+
+    connectBtn.addEventListener("click", () =>
+      busy(connectBtn, "Connecting\u2026", () =>
+        Drive.connect({ interactive: true })
+          .then(() => { toast("Connected to Google Drive", "ok"); return loadBackupList(); })
+      )
+    );
+    backupBtn.addEventListener("click", () =>
+      busy(backupBtn, "Uploading\u2026", () =>
+        Drive.backup().then((res) => {
+          toast("Backed up to " + res.path, "ok");
+          return loadBackupList();
+        })
+      )
+    );
+    restoreBtn.addEventListener("click", () => {
+      const fileName = restoreSelect.value || Drive.backupFileName();
+      confirmDialog(
+        "Restore from Google Drive",
+        "This replaces ALL current data in this browser with " + fileName + ". Continue?",
+        () => {
+          busy(restoreBtn, "Restoring\u2026", () =>
+            Drive.restore(fileName).then((res) => {
+              refreshAll();
+              toast(
+                "Restored " + res.counts.members + " member(s) from " + res.fileName,
+                "ok"
+              );
+              document.querySelector('[data-tab="dashboard"]').click();
+            })
+          );
+        },
+        "Restore & overwrite",
+        true
+      );
+    });
+    disconnectBtn.addEventListener("click", () => { Drive.disconnect(); toast("Disconnected"); setStatus(); refreshButtons(); });
+    refreshBtn.addEventListener("click", () =>
+      busy(refreshBtn, "Refreshing\u2026", () => loadBackupList().then(() => toast("Backup list updated", "ok")))
+    );
+
+    panel.appendChild(el("div", { class: "btn-row" }, [connectBtn, backupBtn, restoreBtn, disconnectBtn]));
+    panel.appendChild(field("Restore file", restoreSelect, "Pick a monthly backup from " + Drive.folderPathLabel()));
+    panel.appendChild(el("div", { class: "btn-row" }, [refreshBtn]));
+
+    const autoWrap = el("div", { class: "subpanel" });
+    const autoChk = el("input", { type: "checkbox" });
+    autoChk.checked = Drive.getAutoSync();
+    autoChk.addEventListener("change", () => {
+      Drive.setAutoSync(autoChk.checked);
+      toast(autoChk.checked ? "Auto-backup to Drive enabled" : "Auto-backup disabled", "ok");
+    });
+    autoWrap.appendChild(el("label", { class: "checkbox-field" }, [
+      autoChk,
+      el("span", { text: " Auto-save to Drive after each change (enabled by default)" }),
+    ]));
+    autoWrap.appendChild(el("div", {
+      class: "help",
+      text: "Updates " + Drive.folderPathLabel() + Drive.backupFileName() + " throughout the month. " +
+        "When a new month starts, creates " + Drive.backupFileName() + " from the latest previous monthly backup on Drive.",
+    }));
+    panel.appendChild(autoWrap);
+
+    setStatus();
+    refreshButtons();
+    loadBackupList();
+    return panel;
   }
 
   // --- Guide & FAQ (ported from zakat_guide.html / zakat_faq.html) ---
@@ -1592,7 +1751,7 @@
         "<li><strong>Analytics</strong> \u2014 wealth/Zakat over time and per-component breakdown.</li>" +
         "<li><strong>Yearly Review</strong> \u2014 record what each asset was worth in past years.</li>" +
         "<li><strong>Market Rates</strong> \u2014 school selector, manual/live rates, yearly history.</li>" +
-        "<li><strong>Backup &amp; Restore</strong> \u2014 Excel backup/report and import.</li>"),
+        "<li><strong>Backup &amp; Restore</strong> \u2014 Excel backup/report, import, and Google Drive sync.</li>"),
     ]));
 
     root.appendChild(collapsible("Disclaimer", [
@@ -1628,7 +1787,7 @@
       ["How do I record what I already paid?", "Per member \u2192 <strong>+ Payment</strong>: recipient and amount. <strong>Remaining</strong> = due \u2212 paid."],
       ["Who can receive my Zakat?", "Qur\u2019an 9:60: poor, needy, collectors, hearts reconciled, captives, debtors, in Allah\u2019s cause, stranded travellers. Your scholar can guide eligible recipients."],
       ["Why does Hanafi nisab differ from other calculators?", "Many calculators use gold nisab only. <strong>Hanafi</strong> often compares <strong>all combined wealth</strong> to <strong>silver nisab</strong> (lower bar). This app follows that when Hanafi is selected."],
-      ["How do I export or back up my data?", "<strong>Backup &amp; Restore</strong> tab \u2014 download an Excel backup (restorable here or on the server) or a readable report."],
+      ["How do I export or back up my data?", "<strong>Backup &amp; Restore</strong> tab \u2014 download an Excel backup (restorable here or on the server), sync to Google Drive at <strong>SMY_FAMILY/ZAKAAT/zakaat_&lt;mon&gt;_&lt;year&gt;.xlsx</strong>, or download a readable report."],
       ["Why are Analytics charts empty for cash or property?", "Set <strong>Acquired year</strong> and record balances over time in <strong>Yearly Review</strong>; metals use yearly rates."],
       ["Can I track the whole family?", "<strong>Yes.</strong> Add multiple <strong>Family members</strong>; Zakat is computed per person and summed on the dashboard."],
     ];
@@ -1646,6 +1805,13 @@
   function init() {
     if (!global.XLSX) console.warn("SheetJS not loaded — Excel backup will be unavailable.");
     Store.load();
+    if (Drive) {
+      Drive.setStatusCallback((kind, msg) => toast(msg, kind));
+      Store.onSave(() => Drive.scheduleAutoBackup());
+      Drive.maybeSyncMonthRollover().then((rolled) => {
+        if (rolled) refreshAll();
+      });
+    }
     baseline = ZK.zakatAsOf();
     setupTabs();
     renderBaselineMeta();

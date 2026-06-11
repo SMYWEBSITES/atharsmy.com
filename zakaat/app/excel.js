@@ -153,11 +153,16 @@
     return wb;
   }
 
-  function exportBackup() {
+  function buildBackupBuffer() {
     const XLSX = global.XLSX;
     const wb = buildBackupWorkbook();
+    return XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  }
+
+  function exportBackup() {
+    const XLSX = global.XLSX;
     const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    XLSX.writeFile(wb, "zakat_backup_" + stamp + ".xlsx");
+    XLSX.writeFile(buildBackupWorkbook(), "zakat_backup_" + stamp + ".xlsx");
   }
 
   // --- Readable Zakat report (mirrors server app/excel_export.py) ---
@@ -375,17 +380,21 @@
     };
   }
 
+  function importBackupFromArrayBuffer(buf) {
+    try {
+      const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf;
+      const parsed = parseBackupArrayBuffer(bytes);
+      return Promise.resolve(Store.replaceFromBackup(parsed));
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
+
   function importBackupFromFile(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = function (e) {
-        try {
-          const parsed = parseBackupArrayBuffer(new Uint8Array(e.target.result));
-          const counts = Store.replaceFromBackup(parsed);
-          resolve(counts);
-        } catch (err) {
-          reject(err);
-        }
+        importBackupFromArrayBuffer(e.target.result).then(resolve).catch(reject);
       };
       reader.onerror = function () { reject(new Error("Could not read the file.")); };
       reader.readAsArrayBuffer(file);
@@ -395,7 +404,9 @@
   global.ZKExcel = {
     exportBackup,
     exportReport,
+    buildBackupBuffer,
     importBackupFromFile,
+    importBackupFromArrayBuffer,
     parseBackupArrayBuffer,
   };
 })(window);
