@@ -72,13 +72,20 @@ a:hover {
   inset: 0 0 auto 0;
   height: var(--header-h);
   z-index: 200;
-  transition: background 0.4s var(--ease), box-shadow 0.4s var(--ease), backdrop-filter 0.4s var(--ease);
+  background: rgba(12, 31, 31, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);
+  transition: background 0.4s var(--ease), box-shadow 0.4s var(--ease), backdrop-filter 0.4s var(--ease), border-color 0.4s var(--ease);
 }
 
-.topbar.scrolled {
-  background: rgba(12, 31, 31, 0.88);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+.topbar--overlay:not(.scrolled) {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom-color: transparent;
+  box-shadow: none;
 }
 
 .topbar .container {
@@ -952,8 +959,10 @@ body.page-enter {
   #site-nav {
     position: fixed;
     inset: var(--header-h) 0 auto 0;
+    z-index: 199;
     background: rgba(12, 31, 31, 0.97);
     backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     padding: 0.75rem 1rem 1.25rem;
     transform: translateY(-8px);
     opacity: 0;

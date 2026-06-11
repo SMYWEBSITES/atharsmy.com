@@ -3,11 +3,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
   var topbar = document.querySelector(".topbar");
   if (topbar) {
-    var onScroll = function () {
-      topbar.classList.toggle("scrolled", window.scrollY > 24);
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
+    var hasHero = document.querySelector(".splash");
+    if (hasHero) {
+      topbar.classList.add("topbar--overlay");
+      var onScroll = function () {
+        topbar.classList.toggle("scrolled", window.scrollY > 24);
+      };
+      onScroll();
+      window.addEventListener("scroll", onScroll, { passive: true });
+    }
   }
 
   var path = window.location.pathname;
