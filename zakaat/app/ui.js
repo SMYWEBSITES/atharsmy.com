@@ -1,0 +1,1712 @@
+/*
+ * UI controller for the offline Zakat Calculator. Vanilla DOM, no framework.
+ */
+(function (global) {
+  "use strict";
+
+  const ZK = global.ZK;
+  const Store = global.ZKStore;
+  const Excel = global.ZKExcel;
+  const Rates = global.ZKRates;
+  const History = global.ZKHistory;
+  let baseline = null;
+  let yearlySelected = null; // selected calendar year on the Yearly Review tab
+
+  // --- DOM helpers ---
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    if (attrs) {
+      for (const k of Object.keys(attrs)) {
+        if (k === "class") node.className = attrs[k];
+        else if (k === "html") node.innerHTML = attrs[k];
+        else if (k === "text") node.textContent = attrs[k];
+        else if (k.startsWith("on") && typeof attrs[k] === "function") node.addEventListener(k.slice(2), attrs[k]);
+        else if (attrs[k] !== null && attrs[k] !== undefined) node.setAttribute(k, attrs[k]);
+      }
+    }
+    if (children) (Array.isArray(children) ? children : [children]).forEach((c) => {
+      if (c == null) return;
+      node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    });
+    return node;
+  }
+
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+  function toast(msg, kind) {
+    const root = document.getElementById("toast-root");
+    const t = el("div", { class: "toast " + (kind || "") , text: msg });
+    root.appendChild(t);
+    requestAnimationFrame(() => t.classList.add("show"));
+    setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 250); }, 3200);
+  }
+
+  function openModal(title, bodyNode, footButtons) {
+    const root = document.getElementById("modal-root");
+    clear(root);
+    const closeBtn = el("button", { class: "modal-close", text: "\u00d7", onclick: closeModal });
+    const head = el("div", { class: "modal-head" }, [el("h3", { text: title }), closeBtn]);
+    const body = el("div", { class: "modal-body" }, bodyNode);
+    const foot = el("div", { class: "modal-foot" }, footButtons || []);
+    const modal = el("div", { class: "modal" }, [head, body, foot]);
+    const overlay = el("div", { class: "modal-overlay", onclick: (e) => { if (e.target === overlay) closeModal(); } }, modal);
+    root.appendChild(overlay);
+  }
+  function closeModal() { clear(document.getElementById("modal-root")); }
+
+  function confirmDialog(title, message, onConfirm, confirmLabel, danger) {
+    const body = el("p", { text: message, class: "muted" });
+    const yes = el("button", { class: "btn " + (danger ? "danger" : ""), text: confirmLabel || "Confirm", onclick: () => { closeModal(); onConfirm(); } });
+    const no = el("button", { class: "btn secondary", text: "Cancel", onclick: closeModal });
+    openModal(title, body, [no, yes]);
+  }
+
+  // --- Tabs ---
+  function setupTabs() {
+    document.getElementById("tabs").addEventListener("click", (e) => {
+      const btn = e.target.closest(".tab-btn");
+      if (!btn) return;
+      const tab = btn.dataset.tab;
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
+      document.getElementById("tab-" + tab).classList.remove("hidden");
+      renderTab(tab);
+    });
+  }
+
+  function renderTab(tab) {
+    if (tab === "dashboard") renderDashboard();
+    else if (tab === "analytics") renderAnalytics();
+    else if (tab === "yearly") renderYearly();
+    else if (tab === "rates") renderRates();
+    else if (tab === "backup") renderBackup();
+    else if (tab === "guide") renderGuide();
+  }
+
+  function refreshAll() {
+    baseline = ZK.zakatAsOf();
+    renderBaselineMeta();
+    const active = document.querySelector(".tab-btn.active");
+    renderTab(active ? active.dataset.tab : "dashboard");
+  }
+
+  function renderBaselineMeta() {
+    const meta = document.getElementById("baseline-meta");
+    const today = ZK.todayUTC();
+    let html = "<div>Today: <strong>" + ZK.fmtDate(today) + "</strong></div>";
+    try {
+      html += "<div>Zakat baseline: <strong>" + ZK.fmtDate(baseline) + "</strong></div>";
+      html += "<div>" + ZK.formatHijriDate(baseline) + "</div>";
+    } catch (e) { /* Intl islamic calendar unavailable */ }
+    meta.innerHTML = html;
+  }
+
+  // --- Dashboard ---
+  function renderDashboard() {
+    const panel = document.getElementById("tab-dashboard");
+    clear(panel);
+
+    const hero = el("div", { class: "hero" }, [
+      el("img", { class: "hero-img", src: "assets/kaaba-hero.png", alt: "The Kaaba, Masjid al-Haram" }),
+      el("div", { class: "hero-overlay" }, [
+        el("div", { class: "hero-title", text: "Household Zakat Calculator" }),
+        el("div", { class: "hero-sub", text: "Purify your wealth \u00b7 fulfil the third pillar" }),
+      ]),
+    ]);
+    panel.appendChild(hero);
+
+    const rates = Store.getRates();
+    const madhab = Store.getMadhab();
+    const members = Store.members();
+    const household = ZK.computeHousehold(members, rates, madhab, baseline);
+
+    const rules = ZK.MADHAB_RULES[madhab];
+
+    const summaryPanel = el("div", { class: "panel" });
+    summaryPanel.appendChild(el("h2", { text: "Household Zakat summary" }));
+    summaryPanel.appendChild(el("p", { class: "sub", text: "School: " + rules.label + " \u00b7 rates as entered \u00b7 calculated as of the Zakat baseline date" }));
+
+    const totalWealth = household.members.reduce((s, m) => s + m.total_wealth_inr, 0);
+    const cards = el("div", { class: "cards" }, [
+      card("Total wealth", ZK.fmtINR(totalWealth)),
+      card("Zakat amount", ZK.fmtINR(household.total_zakat_inr), "accent"),
+      card("Paid", ZK.fmtINR(household.total_paid_inr)),
+      card("Remaining", ZK.fmtINR(Math.max(0, household.total_remaining_inr)), household.total_remaining_inr > 0.005 ? "warn" : ""),
+    ]);
+    summaryPanel.appendChild(cards);
+    panel.appendChild(summaryPanel);
+
+    if (members.length) {
+      panel.appendChild(renderProjectionPanel(members, madhab));
+    }
+
+    if (members.length) {
+    // Per-member table
+    const tablePanel = el("div", { class: "panel" });
+    tablePanel.appendChild(el("h2", { text: "By family member" }));
+    const rows = household.members.map((s) => el("tr", null, [
+      el("td", { text: s.member_name }),
+      el("td", null, el("span", { class: "pill " + (s.is_eligible ? "green" : "gray"), text: s.is_eligible ? "Eligible" : "Below nisab" })),
+      el("td", { class: "num", text: ZK.fmtINR(s.total_wealth_inr) }),
+      el("td", { class: "num", text: ZK.fmtINR(s.nisab_threshold_inr) }),
+      el("td", { class: "num", text: ZK.fmtINR(s.zakat_due_inr) }),
+      el("td", { class: "num", text: ZK.fmtINR(s.total_paid_inr) }),
+      el("td", { class: "num", text: ZK.fmtINR(Math.max(0, s.remaining_inr)) }),
+    ]));
+    const thead = el("thead", null, el("tr", null, [
+      th("Member"), th("Status"), th("Wealth", true), th("Nisab", true),
+      th("Zakat amount", true), th("Paid", true), th("Remaining", true),
+    ]));
+    tablePanel.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [thead, el("tbody", null, rows)]))));
+    panel.appendChild(tablePanel);
+
+    // Component breakdown (household wealth)
+    const wealth = {};
+    ZK.CHART_KEY_ORDER.forEach((k) => { wealth[k] = 0; });
+    household.members.forEach((s) => {
+      const wv = ZK.componentWealthValues(s);
+      ZK.CHART_KEY_ORDER.forEach((k) => { wealth[k] += wv[k] || 0; });
+    });
+    const maxVal = Math.max(1, ...ZK.CHART_KEY_ORDER.map((k) => wealth[k]));
+    const barRows = ZK.CHART_KEY_ORDER.filter((k) => wealth[k] > 0.005).map((k) => el("div", { class: "bar-row" }, [
+      el("div", { text: ZK.COMPONENT_LABELS[k] || k }),
+      el("div", { class: "bar-track" }, el("div", { class: "bar-fill", style: "width:" + (wealth[k] / maxVal * 100).toFixed(1) + "%" })),
+      el("div", { class: "bar-val num", text: ZK.fmtINR(wealth[k]) }),
+    ]));
+    if (barRows.length) {
+      const bp = el("div", { class: "panel" });
+      bp.appendChild(el("h2", { text: "Wealth by component" }));
+      bp.appendChild(el("div", { class: "bars" }, barRows));
+      panel.appendChild(bp);
+    }
+    } // end members.length
+
+    // Family & assets management lives on the same first page.
+    buildFamily(panel);
+  }
+
+  // --- Analytics ---
+  function renderAnalytics() {
+    const panel = document.getElementById("tab-analytics");
+    clear(panel);
+    const rates = Store.getRates();
+    const madhab = Store.getMadhab();
+    const members = Store.members();
+    const summaries = members.map((m) => ZK.computeMemberZakat(m, m.assets || [], m.zakat_payments || [], rates, madhab, baseline));
+
+    // Totals
+    const totalWealthNet = summaries.reduce((s, m) => s + m.net_wealth_inr, 0);
+    const totalWealthGross = summaries.reduce((s, m) => s + m.total_wealth_inr, 0);
+    const totalLiab = summaries.reduce((s, m) => s + m.liabilities_wealth_inr, 0);
+    const totalZakatable = summaries.reduce((s, m) => s + m.nisab_wealth_inr, 0);
+    const totalZakat = summaries.reduce((s, m) => s + m.zakat_due_inr, 0);
+
+    const head = el("div", { class: "panel" });
+    head.appendChild(el("h2", { text: "Wealth analytics" }));
+    head.appendChild(el("p", { class: "sub", text: "Current household wealth by component (" + ZK.MADHAB_RULES[madhab].label + ")." }));
+    head.appendChild(el("div", { class: "cards" }, [
+      card("Total wealth (net of loans)", ZK.fmtINR(totalWealthNet), "accent"),
+      card("Gross wealth", ZK.fmtINR(totalWealthGross)),
+      card("Liabilities", ZK.fmtINR(totalLiab)),
+      card("Zakatable wealth", ZK.fmtINR(totalZakatable)),
+      card("Zakat amount", ZK.fmtINR(totalZakat), "warn"),
+    ]));
+    panel.appendChild(head);
+
+    if (!members.length) {
+      panel.appendChild(el("div", { class: "panel" }, el("div", { class: "empty", html: "No data yet. Add members and assets on the <strong>Dashboard</strong>." })));
+      return;
+    }
+
+    // Projected Zakat across previous / current / next baselines
+    panel.appendChild(renderProjectionPanel(members, madhab));
+
+    // Multi-year wealth & Zakat trend (older-app analytics logic, fully in-browser)
+    panel.appendChild(renderTrendPanel(members, madhab));
+
+    // Rates over time graph
+    panel.appendChild(renderRatesGraphPanel());
+
+    // Active component columns (those with any value across the household)
+    const totals = {}; ZK.CHART_KEY_ORDER.forEach((k) => { totals[k] = 0; });
+    summaries.forEach((s) => {
+      const wv = ZK.componentWealthValues(s, true);
+      ZK.CHART_KEY_ORDER.forEach((k) => { totals[k] += wv[k] || 0; });
+    });
+    const cols = ZK.CHART_KEY_ORDER.filter((k) => totals[k] > 0.01);
+
+    // Wealth table: components as ROWS (fewer columns → no horizontal scroll),
+    // members as columns, plus a household total with an inline share bar.
+    const tablePanel = el("div", { class: "panel" });
+    tablePanel.appendChild(el("h2", { text: "Wealth by component" }));
+    const memberWv = summaries.map((s) => ({ name: s.member_name, wv: ZK.componentWealthValues(s, true) }));
+    const householdMax = Math.max(1, ...cols.map((k) => totals[k]));
+    const headRow = el("tr", null, [th("Component")]
+      .concat(memberWv.map((m) => th(m.name, true)))
+      .concat([th("Household", true), th("Share")]));
+    const bodyRows = cols.map((k) => {
+      const pct = (totals[k] / householdMax) * 100;
+      return el("tr", null, [el("td", { text: ZK.WEALTH_COMPONENT_LABELS[k] || k })]
+        .concat(memberWv.map((m) => el("td", { class: "num", text: m.wv[k] > 0.005 ? ZK.fmtINR(m.wv[k]) : "\u2014" })))
+        .concat([
+          el("td", { class: "num" }, el("strong", { text: ZK.fmtINR(totals[k]) })),
+          el("td", { class: "share-cell" }, el("div", { class: "share-track" }, el("div", { class: "share-fill", style: "width:" + pct.toFixed(1) + "%" }))),
+        ]));
+    });
+    const totalRow = el("tr", { class: "total-row" }, [el("td", null, el("strong", { text: "Total (net)" }))]
+      .concat(memberWv.map((m) => el("td", { class: "num" }, el("strong", { text: ZK.fmtINR(m.wv.total) }))))
+      .concat([el("td", { class: "num" }, el("strong", { text: ZK.fmtINR(totalWealthNet) })), el("td")]));
+    bodyRows.push(totalRow);
+    const shareColIdx = 1 + memberWv.length + 1; // Component + members + Household, then Share
+    tablePanel.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [el("thead", null, headRow), el("tbody", null, bodyRows)]), { skip: [shareColIdx] })));
+    panel.appendChild(tablePanel);
+
+    // Per-member zakat eligibility summary
+    const zp = el("div", { class: "panel" });
+    zp.appendChild(el("h2", { text: "Zakat by member" }));
+    const zRows = summaries.map((s) => el("tr", null, [
+      el("td", { text: s.member_name }),
+      el("td", null, el("span", { class: "pill " + (s.is_eligible ? "green" : "gray"), text: s.is_eligible ? "Eligible" : "Below nisab" })),
+      el("td", { class: "num", text: ZK.fmtINR(s.nisab_threshold_inr) }),
+      el("td", { class: "num", text: ZK.fmtINR(s.zakat_due_inr) }),
+      el("td", { class: "num", text: ZK.fmtINR(s.total_paid_inr) }),
+      el("td", { class: "num", text: ZK.fmtINR(Math.max(0, s.remaining_inr)) }),
+    ]));
+    zp.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [
+      el("thead", null, el("tr", null, [th("Member"), th("Status"), th("Nisab", true), th("Zakat amount", true), th("Paid", true), th("Remaining", true)])),
+      el("tbody", null, zRows),
+    ]))));
+    panel.appendChild(zp);
+
+    // Recorded balance changes (year-over-year snapshot diffs)
+    const changePanel = renderBalanceChangesPanel(members);
+    if (changePanel) panel.appendChild(changePanel);
+
+    // Per-member analytics (trend + breakdown), one collapsible per member
+    if (members.length > 1) {
+      const mp = el("div", { class: "panel" });
+      mp.appendChild(el("h2", { text: "Per-member analytics" }));
+      members.forEach((m) => {
+        const s = ZK.computeMemberZakat(m, m.assets || [], m.zakat_payments || [], rates, madhab, baseline);
+        const sectionBody = [];
+        sectionBody.push(memberBreakdownNode(s));
+        sectionBody.push(renderTrendPanel([m], madhab, { bare: true }));
+        mp.appendChild(collapsible(m.name + " \u2014 " + ZK.fmtINR(s.zakat_due_inr), sectionBody, false));
+      });
+      panel.appendChild(mp);
+    }
+  }
+
+  // YoY balance changes for cash/PF/stocks/loans that have snapshots in both
+  // the previous and current year (asset_history.valuation_change_notes).
+  function renderBalanceChangesPanel(members) {
+    const cy = ZK.todayUTC().getUTCFullYear();
+    const prior = cy - 1;
+    const allNotes = [];
+    members.forEach((m) => {
+      ZK.valuationChangeNotes(m.assets || [], prior, cy).forEach((n) => {
+        allNotes.push(Object.assign({ member_name: m.name }, n));
+      });
+    });
+    if (!allNotes.length) return null;
+    allNotes.sort((a, b) => Math.abs(b.change_inr) - Math.abs(a.change_inr));
+    const panel = el("div", { class: "panel" });
+    panel.appendChild(el("h2", { text: "Recorded balance changes (" + prior + " \u2192 " + cy + ")" }));
+    panel.appendChild(el("p", { class: "sub", text: "Assets with recorded balances in both years. Add or edit balances in Yearly Review." }));
+    const rows = allNotes.map((n) => el("tr", null, [
+      el("td", { text: n.member_name }),
+      el("td", { text: n.description + " (" + n.category + ")" }),
+      el("td", { class: "num", text: ZK.fmtINR(n.prior_value_inr) }),
+      el("td", { class: "num", text: ZK.fmtINR(n.current_value_inr) }),
+      el("td", { class: "num " + (n.change_inr >= 0 ? "pos" : "neg"), text: (n.change_inr >= 0 ? "+" : "\u2212") + ZK.fmtINR(Math.abs(n.change_inr)) }),
+      el("td", { class: "num", text: n.change_pct != null ? (n.change_pct >= 0 ? "+" : "\u2212") + Math.abs(n.change_pct).toFixed(1) + "%" : "\u2014" }),
+    ]));
+    panel.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [
+      el("thead", null, el("tr", null, [th("Member"), th("Asset"), th(String(prior), true), th(String(cy), true), th("Change", true), th("%", true)])),
+      el("tbody", null, rows),
+    ]))));
+    return panel;
+  }
+
+  // --- Yearly Review (ported from yearly_review.py) ---
+  function yearlyRange(members) {
+    const cy = ZK.todayUTC().getUTCFullYear();
+    const years = [];
+    members.forEach((m) => (m.assets || []).forEach((a) => {
+      const y = ZK.effectiveAcquiredYear(a); if (y) years.push(y);
+    }));
+    let start = years.length ? Math.min.apply(null, years) : cy;
+    if (start > cy) start = cy;
+    if (cy - start > 30) start = cy - 30;
+    return [start, cy];
+  }
+
+  function yearlyInputMode(category) {
+    if (ZK.METAL_CATEGORIES.has(category)) return "metal";
+    return "inr";
+  }
+
+  // Port of yearly_review._chart_value_inr
+  function yearlyChartValue(asset, year, yearRates) {
+    if (year < ZK.effectiveAcquiredYear(asset)) return { value: null, status: "Not held yet" };
+    const snaps = asset.snapshots || [];
+    const snap = ZK.pickSnapshot(snaps, year);
+    const clone = ZK.assetAsOf(asset, year, snaps);
+    if (!clone) {
+      if (["Cash", "Stocks", "Business", "Partnership", "Liabilities"].includes(asset.category)) {
+        return { value: null, status: "Missing balance" };
+      }
+      return { value: null, status: "No data" };
+    }
+    const asOf = new Date(Date.UTC(year, 11, 31));
+    const val = ZK.effectiveValuationInr(clone, yearRates, asOf);
+    if (snap) return { value: val, status: "Recorded" };
+    if (ZK.isPfAsset(asset)) return { value: val, status: "Projected" };
+    if (ZK.METAL_CATEGORIES.has(asset.category)) return { value: val, status: "Weight \u00d7 year rate" };
+    return { value: val, status: "Estimated" };
+  }
+
+  function renderYearly() {
+    const panel = document.getElementById("tab-yearly");
+    clear(panel);
+    const members = Store.members();
+    const rates = Store.getRates();
+    const [startYear, endYear] = yearlyRange(members);
+
+    if (yearlySelected == null || yearlySelected < startYear || yearlySelected > endYear) {
+      yearlySelected = endYear;
+    }
+    const year = yearlySelected;
+
+    const rmap = {};
+    Store.yearlyRates().forEach((r) => { rmap[r.year] = r; });
+    const yearRates = rateForYear(year, rmap, rates);
+
+    // Header + year selector
+    const head = el("div", { class: "panel" });
+    head.appendChild(el("h2", { text: "Yearly review" }));
+    head.appendChild(el("p", { class: "sub", html: "Record what each asset was actually worth at the end of a past year. These snapshots make the <strong>Analytics</strong> trends accurate for cash, PF and investments (metals are revalued automatically from yearly rates)." }));
+    const yearSel = el("select", null, [].concat(rangeDesc(startYear, endYear).map((y) =>
+      el("option", { value: y, selected: y === year ? "selected" : null, text: String(y) }))));
+    yearSel.addEventListener("change", () => { yearlySelected = parseInt(yearSel.value, 10); renderYearly(); });
+    head.appendChild(field("Year", yearSel));
+    panel.appendChild(head);
+
+    if (!members.length) {
+      panel.appendChild(el("div", { class: "panel" }, el("div", { class: "empty", html: "No data yet. Add members and assets on the <strong>Dashboard</strong>." })));
+      return;
+    }
+
+    // Build rows + stats
+    const allRows = [];
+    members.forEach((m) => {
+      (m.assets || []).slice().sort((a, b) => (a.category + (a.description || "")).localeCompare(b.category + (b.description || ""))).forEach((a) => {
+        const cv = yearlyChartValue(a, year, yearRates);
+        const snap = ZK.pickSnapshot(a.snapshots || [], year);
+        const hasSnapshot = !!(snap && snap.year === year && !snap.is_backfill);
+        allRows.push({ member: m, asset: a, mode: yearlyInputMode(a.category), value: cv.value, status: cv.status, hasSnapshot: hasSnapshot, snap: snap });
+      });
+    });
+    const totalAssets = allRows.length;
+    const recorded = allRows.filter((r) => r.hasSnapshot).length;
+    const missing = allRows.filter((r) => !r.hasSnapshot && r.status === "Missing balance").length;
+
+    const stats = el("div", { class: "panel" });
+    stats.appendChild(el("div", { class: "cards" }, [
+      card("Assets", String(totalAssets)),
+      card("Recorded for " + year, String(recorded), recorded ? "accent" : ""),
+      card("Missing balances", String(missing), missing ? "warn" : ""),
+    ]));
+    const fillBtn = el("button", { class: "btn", text: "Record all computable values for " + year, onclick: () => {
+      let n = 0;
+      allRows.forEach((r) => {
+        if (r.hasSnapshot) return;
+        const clone = ZK.assetAsOf(r.asset, year, r.asset.snapshots || []);
+        if (!clone) return;
+        const asOf = new Date(Date.UTC(year, 11, 31));
+        const state = ZK.snapshotState(r.asset, year);
+        state.valuation_inr = ZK.effectiveValuationInr(clone, yearRates, asOf);
+        if (clone.weight_grams != null) state.weight_grams = clone.weight_grams;
+        if (clone.gem_carats != null) state.gem_carats = clone.gem_carats;
+        Store.setSnapshot(r.member.id, r.asset.id, year, state);
+        n++;
+      });
+      toast(n ? "Recorded " + n + " value(s) for " + year : "Nothing to record", n ? "ok" : "");
+      refreshAll();
+    } });
+    stats.appendChild(el("div", { class: "btn-row" }, fillBtn));
+    panel.appendChild(stats);
+
+    // Rates for the selected year
+    panel.appendChild(yearlyRatesForYear(year, yearRates, rmap));
+
+    // Per-member asset tables
+    members.forEach((m) => {
+      const memberRows = allRows.filter((r) => r.member.id === m.id);
+      if (!memberRows.length) return;
+      const block = el("div", { class: "panel" });
+      const payTotal = (m.zakat_payments || []).reduce((s, p) => s + ZK.num(p.amount_inr), 0);
+      block.appendChild(el("h2", { text: m.name }));
+      block.appendChild(el("p", { class: "sub", text: (m.relationship || "Family") + " \u00b7 all-time payments recorded: " + ZK.fmtINR(payTotal) }));
+
+      const rows = memberRows.map((r) => yearlyAssetRow(r, year));
+      const thead = el("thead", null, el("tr", null, [
+        th("Category"), th("Description"), th(year + " value", true), th("Status"), th("Record balance"), th("", true),
+      ]));
+      block.appendChild(el("div", { class: "table-wrap" }, el("table", null, [thead, el("tbody", null, rows)])));
+      panel.appendChild(block);
+    });
+  }
+
+  function rangeDesc(start, end) {
+    const out = [];
+    for (let y = end; y >= start; y--) out.push(y);
+    return out;
+  }
+
+  function yearlyAssetRow(r, year) {
+    const a = r.asset;
+    const isMetal = r.mode === "metal";
+    const isDiamond = a.category === "Diamond";
+    let editInr = "", editWeight = "";
+    if (r.snap && r.hasSnapshot) {
+      if (r.snap.valuation_inr != null) editInr = r.snap.valuation_inr;
+      if (r.snap.weight_grams != null) editWeight = r.snap.weight_grams;
+      else if (r.snap.gem_carats != null) editWeight = r.snap.gem_carats;
+    } else if (r.mode === "inr") {
+      if (ZK.isPfAsset(a) && r.value != null) editInr = (Math.round(r.value * 100) / 100);
+      else if (ZK.num(a.valuation_inr) > 0) editInr = ZK.num(a.valuation_inr);
+    } else if (isMetal) {
+      if (a.weight_grams != null) editWeight = a.weight_grams;
+      else if (a.gem_carats != null) editWeight = a.gem_carats;
+    }
+
+    const inp = isMetal
+      ? el("input", { type: "number", step: "0.001", value: editWeight, placeholder: isDiamond ? "carats" : "grams", style: "max-width:130px" })
+      : el("input", { type: "number", step: "0.01", value: editInr, placeholder: "INR", style: "max-width:140px" });
+
+    const saveBtn = el("button", { class: "link", text: "Save", onclick: () => {
+      const state = ZK.snapshotState(a, year);
+      if (isMetal) {
+        if (inp.value === "") { toast("Enter a value first", "err"); return; }
+        if (isDiamond) { state.gem_carats = ZK.num(inp.value); state.weight_grams = null; }
+        else { state.weight_grams = ZK.num(inp.value); }
+        // value derived from weight × that year's rate at display time
+        const rmap = {}; Store.yearlyRates().forEach((x) => { rmap[x.year] = x; });
+        const yr = rateForYear(year, rmap, Store.getRates());
+        const clone = Object.assign({}, a, { weight_grams: state.weight_grams, gem_carats: state.gem_carats });
+        state.valuation_inr = ZK.effectiveValuationInr(clone, yr, new Date(Date.UTC(year, 11, 31)));
+      } else {
+        if (inp.value === "") { toast("Enter a value first", "err"); return; }
+        state.valuation_inr = ZK.num(inp.value);
+      }
+      Store.setSnapshot(r.member.id, a.id, year, state);
+      toast("Recorded " + a.category + " for " + year, "ok");
+      refreshAll();
+    } });
+
+    const clearBtn = r.hasSnapshot
+      ? el("button", { class: "link", style: "color:#dc2626", text: "Clear", onclick: () => { Store.deleteSnapshot(r.member.id, a.id, year); toast("Cleared " + year); refreshAll(); } })
+      : null;
+
+    const statusPill = el("span", { class: "pill " + yearlyStatusClass(r.status), text: r.status });
+    return el("tr", null, [
+      el("td", null, el("span", { class: "pill gray", text: a.category })),
+      el("td", { text: a.description || "\u2014" }),
+      el("td", { class: "num", text: r.value != null ? ZK.fmtINR(r.value) : "\u2014" }),
+      el("td", null, statusPill),
+      el("td", null, r.mode === "readonly" ? el("span", { class: "muted", text: "\u2014" }) : inp),
+      el("td", { class: "num" }, r.mode === "readonly" ? null : [saveBtn, clearBtn ? document.createTextNode("  ") : null, clearBtn]),
+    ]);
+  }
+
+  function yearlyStatusClass(status) {
+    if (status === "Recorded") return "green";
+    if (status === "Missing balance") return "amber";
+    return "gray";
+  }
+
+  function yearlyRatesForYear(year, yearRates, rmap) {
+    const panel = el("div", { class: "subpanel" });
+    panel.appendChild(el("div", { class: "member-section-title", text: "Market rates for " + year }));
+    const existing = rmap[year];
+    panel.appendChild(el("p", { class: "help", text: existing
+      ? (existing.is_user_override ? "Saved manually for this year." : "Estimated/fetched for this year \u2014 edit to override.")
+      : "No stored rates for this year; values below are the nearest available. Save to pin them." }));
+    const g = el("input", { type: "number", step: "0.01", value: ZK.num(yearRates.gold_inr_per_gram), style: "max-width:120px" });
+    const s = el("input", { type: "number", step: "0.01", value: ZK.num(yearRates.silver_inr_per_gram), style: "max-width:110px" });
+    const p = el("input", { type: "number", step: "0.01", value: ZK.num(yearRates.platinum_inr_per_gram), style: "max-width:120px" });
+    const d = el("input", { type: "number", step: "0.01", value: ZK.num(yearRates.diamond_inr_per_carat), style: "max-width:130px" });
+    panel.appendChild(el("div", { class: "field-row" }, [field("Gold /g", g), field("Silver /g", s)]));
+    panel.appendChild(el("div", { class: "field-row" }, [field("Platinum /g", p), field("Diamond /ct", d)]));
+    panel.appendChild(el("div", { class: "btn-row" }, el("button", { class: "btn secondary", text: "Save rates for " + year, onclick: () => {
+      Store.setYearlyRate(year, { gold_inr_per_gram: g.value, silver_inr_per_gram: s.value, platinum_inr_per_gram: p.value, diamond_inr_per_carat: d.value }, { is_estimated: false, is_user_override: true, rate_source: "manual" });
+      toast("Saved rates for " + year, "ok"); renderYearly();
+    } })));
+    return panel;
+  }
+
+  function card(label, value, cls) {
+    return el("div", { class: "card " + (cls || "") }, [
+      el("div", { class: "label", text: label }),
+      el("div", { class: "value", text: value }),
+    ]);
+  }
+  function th(label, num) { return el("th", { class: num ? "num" : "", text: label }); }
+
+  // --- Generic client-side table sorting ---
+  function cellSortValue(cell) {
+    if (!cell) return { isNum: false, num: 0, str: "" };
+    const input = cell.querySelector("input");
+    let raw = input ? input.value : cell.textContent;
+    raw = (raw || "").trim();
+    const cleaned = raw.replace(/[^0-9.\-]/g, "");
+    const num = parseFloat(cleaned);
+    const isNum = raw !== "" && raw !== "\u2014" && cleaned !== "" && !isNaN(num) && /[0-9]/.test(raw);
+    return { isNum: isNum, num: isNum ? num : 0, str: raw.toLowerCase() };
+  }
+
+  function sortTableByColumn(table, idx, dir) {
+    const tbody = table.tBodies[0];
+    if (!tbody) return;
+    const rows = Array.prototype.slice.call(tbody.rows);
+    const pinned = rows.filter((r) => r.classList.contains("total-row"));
+    const movable = rows.filter((r) => !r.classList.contains("total-row"));
+    movable.sort((a, b) => {
+      const av = cellSortValue(a.cells[idx]), bv = cellSortValue(b.cells[idx]);
+      let cmp;
+      if (av.isNum && bv.isNum) cmp = av.num - bv.num;
+      else cmp = av.str < bv.str ? -1 : (av.str > bv.str ? 1 : 0);
+      return cmp * dir;
+    });
+    movable.concat(pinned).forEach((r) => tbody.appendChild(r));
+  }
+
+  // Wire click-to-sort on a table's header cells. opts.skip = [colIndexes to ignore].
+  function sortable(table, opts) {
+    opts = opts || {};
+    const skip = opts.skip || [];
+    const thead = table.tHead || table.querySelector("thead");
+    if (!thead || !thead.rows.length) return table;
+    const ths = Array.prototype.slice.call(thead.rows[0].cells);
+    const state = {};
+    ths.forEach((thEl, idx) => {
+      if (skip.indexOf(idx) >= 0 || !thEl.textContent.trim()) return;
+      thEl.classList.add("sortable");
+      thEl.addEventListener("click", () => {
+        const dir = state[idx] === 1 ? -1 : 1;
+        state[idx] = dir;
+        ths.forEach((o) => o.classList.remove("sort-asc", "sort-desc"));
+        thEl.classList.add(dir === 1 ? "sort-asc" : "sort-desc");
+        sortTableByColumn(table, idx, dir);
+      });
+    });
+    return table;
+  }
+
+  // --- Zakat across baselines: previous Ramadan, today (live), next Ramadan (projected) ---
+  function baselineProjections(members, madhab) {
+    const today = ZK.todayUTC();
+    const current = ZK.currentZakatBaselineDate(today);
+    const prev = ZK.currentZakatBaselineDate(new Date(current.getTime() - 86400000));
+    const next = ZK.nextZakatBaselineDate(today);
+
+    const rmap = {};
+    Store.yearlyRates().forEach((r) => { rmap[r.year] = r; });
+    const live = Store.getRates();
+
+    function totalsAt(date, rates) {
+      let wealth = 0, zakat = 0;
+      members.forEach((m) => {
+        const s = ZK.computeMemberZakat(m, m.assets || [], m.zakat_payments || [], rates, madhab, date);
+        wealth += s.net_wealth_inr; zakat += s.zakat_due_inr;
+      });
+      return { wealth: wealth, zakat: zakat };
+    }
+
+    return [
+      Object.assign({ label: "Previous Ramadan", date: prev, cls: "" }, totalsAt(prev, rateForYear(prev.getUTCFullYear(), rmap, live))),
+      Object.assign({ label: "Today (current rates)", date: today, cls: "accent" }, totalsAt(today, live)),
+      Object.assign({ label: "Next Ramadan (projected)", date: next, cls: "warn" }, totalsAt(next, live)),
+    ];
+  }
+
+  function renderProjectionPanel(members, madhab) {
+    const panel = el("div", { class: "panel" });
+    panel.appendChild(el("h2", { text: "Zakat across baselines" }));
+    panel.appendChild(el("p", { class: "sub", text: "Your wealth and Zakat at the previous Zakat baseline, today's live rates, and the projected next Zakat baseline (1st Friday of Ramadan)." }));
+    const proj = baselineProjections(members, madhab);
+    panel.appendChild(el("div", { class: "cards" }, proj.map((p) =>
+      el("div", { class: "card " + p.cls }, [
+        el("div", { class: "label", text: p.label }),
+        el("div", { class: "value", text: ZK.fmtINR(p.zakat) }),
+        el("div", { class: "card-meta", text: ZK.fmtDate(p.date) + " \u00b7 wealth " + ZK.fmtINR(p.wealth) }),
+      ])
+    )));
+    return panel;
+  }
+
+  // --- Rates over time (line graph per metal) ---
+  function sparkline(points, color) {
+    const W = 560, H = 72, padX = 5, padY = 9;
+    const vals = points.map((p) => p.value);
+    const min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    const range = (max - min) || 1;
+    const n = points.length;
+    const x = (i) => padX + (n <= 1 ? 0 : (i / (n - 1)) * (W - 2 * padX));
+    const y = (v) => padY + (1 - (v - min) / range) * (H - 2 * padY);
+    const line = points.map((p, i) => x(i) + "," + y(p.value)).join(" ");
+    const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, class: "spark-svg", preserveAspectRatio: "none" });
+    svg.appendChild(svgEl("polyline", { points: line, fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round" }));
+    points.forEach((p, i) => svg.appendChild(svgEl("circle", { cx: x(i), cy: y(p.value), r: 2.5, fill: color }, svgEl("title", null, p.year + ": " + ZK.fmtINR(p.value) + "/g"))));
+    return svg;
+  }
+
+  function renderRatesGraphPanel() {
+    const panel = el("div", { class: "panel" });
+    panel.appendChild(el("h2", { text: "Market rates over time" }));
+    panel.appendChild(el("p", { class: "sub", html: "Per-year metal rates (\u20b9/gram). Fetch a range on the <strong>Market Rates</strong> tab to populate history. Each line is scaled to its own range." }));
+
+    const rows = Store.yearlyRates().slice().sort((a, b) => a.year - b.year);
+    const metals = [
+      ["gold_inr_per_gram", "Gold", "#d97706"],
+      ["silver_inr_per_gram", "Silver", "#64748b"],
+      ["platinum_inr_per_gram", "Platinum", "#2563eb"],
+    ];
+    let any = false;
+    metals.forEach((mt) => {
+      const pts = rows.map((r) => ({ year: r.year, value: ZK.num(r[mt[0]]) })).filter((p) => p.value > 0);
+      if (pts.length < 2) return;
+      any = true;
+      const cur = pts[pts.length - 1];
+      panel.appendChild(el("div", { class: "spark-row" }, [
+        el("div", { class: "spark-label" }, [
+          el("span", { class: "spark-name", text: mt[1] }),
+          el("span", { class: "spark-cur", text: ZK.fmtINR(cur.value) + "/g (" + cur.year + ")" }),
+        ]),
+        el("div", { class: "spark-wrap" }, sparkline(pts, mt[2])),
+      ]));
+    });
+    if (!any) panel.appendChild(el("div", { class: "empty", text: "Need at least two years of rates. Fetch a range on the Market Rates tab." }));
+    return panel;
+  }
+
+  // --- Multi-year trend (ported from the server's zakat_trends logic, in-browser) ---
+  function svgEl(tag, attrs, children) {
+    const NS = "http://www.w3.org/2000/svg";
+    const node = document.createElementNS(NS, tag);
+    if (attrs) for (const k of Object.keys(attrs)) { if (attrs[k] != null) node.setAttribute(k, attrs[k]); }
+    if (children) (Array.isArray(children) ? children : [children]).forEach((c) => {
+      if (c == null) return;
+      node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    });
+    return node;
+  }
+
+  function effectiveAcquiredYear(a) {
+    if (a.acquired_year) return parseInt(a.acquired_year, 10);
+    if (a.hawl_start_date) { const y = parseInt(String(a.hawl_start_date).slice(0, 4), 10); if (y) return y; }
+    return null;
+  }
+
+  // Pick the stored yearly rate for a year, falling back to nearest stored year, then current session.
+  function rateForYear(year, rmap, fallback) {
+    if (rmap[year]) return rmap[year];
+    const keys = Object.keys(rmap).map(Number);
+    const prior = keys.filter((y) => y < year);
+    if (prior.length) return rmap[Math.max.apply(null, prior)];
+    const future = keys.filter((y) => y > year);
+    if (future.length) return rmap[Math.min.apply(null, future)];
+    return fallback;
+  }
+
+  // Assets that existed by a given year (by acquired/hawl year; undated assets count in all years).
+  function assetsAsOfYear(assets, year) {
+    return (assets || []).filter((a) => { const ay = effectiveAcquiredYear(a); return ay == null || ay <= year; });
+  }
+
+  function baselineForYear(year, currentYear, today) {
+    const asOf = year < currentYear ? new Date(Date.UTC(year, 11, 31)) : today;
+    return ZK.zakatAsOf(asOf);
+  }
+
+  function buildHouseholdTrend(members, madhab) {
+    const today = ZK.todayUTC();
+    const currentYear = today.getUTCFullYear();
+    const fallback = Store.getRates();
+    const rmap = {};
+    Store.yearlyRates().forEach((r) => { rmap[r.year] = r; });
+
+    const starts = [];
+    members.forEach((m) => (m.assets || []).forEach((a) => { const ay = effectiveAcquiredYear(a); if (ay) starts.push(ay); }));
+    let startYear = starts.length ? Math.min.apply(null, starts) : currentYear - 5;
+    if (currentYear - startYear > 20) startYear = currentYear - 20; // cap span
+    if (startYear > currentYear) startYear = currentYear;
+
+    const points = [];
+    for (let y = startYear; y <= currentYear; y++) {
+      const yr = rateForYear(y, rmap, fallback);
+      const asOf = baselineForYear(y, currentYear, today);
+      let wealth = 0, zakat = 0;
+      members.forEach((m) => {
+        const ya = ZK.assetsAsOfYear(m.assets || [], y);
+        const s = ZK.computeMemberZakat(m, ya, m.zakat_payments || [], yr, madhab, asOf);
+        wealth += s.net_wealth_inr;
+        zakat += s.zakat_due_inr;
+      });
+      points.push({ year: y, wealth: wealth, zakat: zakat, estimated: rmap[y] ? !!rmap[y].is_estimated : true, hasRate: !!rmap[y] });
+    }
+    return { years: points.map((p) => p.year), points: points };
+  }
+
+  function renderTrendPanel(members, madhab, opts) {
+    opts = opts || {};
+    const panel = el("div", { class: opts.bare ? "" : "panel" });
+    if (!opts.bare) {
+      panel.appendChild(el("h2", { text: opts.title || "Wealth & Zakat over time" }));
+      panel.appendChild(el("p", { class: "sub", html: "Each year your assets are revalued at that year's market rates (metals by weight; other balances held as recorded) and Zakat is computed on that year's baseline. Use <strong>Yearly Review</strong> to record past cash/PF/investment balances." }));
+    }
+
+    const trend = buildHouseholdTrend(members, madhab);
+    if (trend.points.length < 1) { panel.appendChild(el("div", { class: "empty", text: "Add assets to see a trend." })); return panel; }
+
+    // Legend
+    panel.appendChild(el("div", { class: "trend-legend" }, [
+      el("span", null, [el("span", { class: "swatch", style: "background:#10b981" }), document.createTextNode(" Net wealth")]),
+      el("span", null, [el("span", { class: "swatch", style: "background:#f59e0b" }), document.createTextNode(" Zakat amount")]),
+    ]));
+
+    // SVG chart: wealth bars (left scale) + zakat line (right scale)
+    const W = 760, H = 260, padL = 6, padR = 6, padT = 16, padB = 26;
+    const innerW = W - padL - padR, innerH = H - padT - padB;
+    const n = trend.points.length;
+    const maxW = Math.max(1, ...trend.points.map((p) => p.wealth));
+    const maxZ = Math.max(1, ...trend.points.map((p) => p.zakat));
+    const bw = innerW / n;
+    const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, class: "trend-svg", preserveAspectRatio: "none" });
+    trend.points.forEach((p, i) => {
+      const h = (p.wealth / maxW) * innerH;
+      const x = padL + i * bw + bw * 0.2, y = padT + innerH - h, w = bw * 0.6;
+      svg.appendChild(svgEl("rect", { x: x, y: y, width: w, height: Math.max(0, h), rx: 3, fill: p.estimated ? "#6ee7b7" : "#10b981" },
+        svgEl("title", null, p.year + ": net wealth " + ZK.fmtINR(p.wealth) + (p.estimated ? " (estimated rates)" : ""))));
+      svg.appendChild(svgEl("text", { x: padL + i * bw + bw / 2, y: H - 8, "text-anchor": "middle", class: "trend-axis" }, String(p.year)));
+    });
+    const linePts = trend.points.map((p, i) => (padL + i * bw + bw / 2) + "," + (padT + innerH - (p.zakat / maxZ) * innerH)).join(" ");
+    svg.appendChild(svgEl("polyline", { points: linePts, fill: "none", stroke: "#f59e0b", "stroke-width": 2 }));
+    trend.points.forEach((p, i) => {
+      const cx = padL + i * bw + bw / 2, cy = padT + innerH - (p.zakat / maxZ) * innerH;
+      svg.appendChild(svgEl("circle", { cx: cx, cy: cy, r: 3, fill: "#f59e0b" }, svgEl("title", null, p.year + ": Zakat " + ZK.fmtINR(p.zakat))));
+    });
+    panel.appendChild(el("div", { class: "trend-chart" }, svg));
+
+    // Detail table
+    const rows = trend.points.slice().reverse().map((p) => el("tr", null, [
+      el("td", null, el("strong", { text: String(p.year) })),
+      el("td", { class: "num", text: ZK.fmtINR(p.wealth) }),
+      el("td", { class: "num", text: ZK.fmtINR(p.zakat) }),
+      el("td", null, el("span", { class: "pill " + (p.hasRate && !p.estimated ? "green" : "gray"), text: p.hasRate ? (p.estimated ? "estimated" : "actual") : "current rates" })),
+    ]));
+    panel.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [
+      el("thead", null, el("tr", null, [th("Year"), th("Net wealth", true), th("Zakat amount", true), th("Rates")])),
+      el("tbody", null, rows),
+    ]))));
+    return panel;
+  }
+
+  // --- Family & Assets (built into the dashboard landing page) ---
+  function buildFamily(panel) {
+    const rates = Store.getRates();
+    const madhab = Store.getMadhab();
+
+    const head = el("div", { class: "panel" });
+    head.appendChild(el("h2", { text: "Family members & assets" }));
+    head.appendChild(el("p", { class: "sub", text: "Add each household member, then record their assets and Zakat payments." }));
+    head.appendChild(el("div", { class: "btn-row" }, [
+      el("button", { class: "btn", text: "+ Add family member", onclick: () => memberForm() }),
+    ]));
+    panel.appendChild(head);
+
+    const members = Store.members();
+    if (!members.length) {
+      panel.appendChild(el("div", { class: "panel" }, el("div", { class: "empty", text: "No members yet. Add your first family member above." })));
+      return;
+    }
+
+    members.forEach((m) => {
+      const summary = ZK.computeMemberZakat(m, m.assets || [], m.zakat_payments || [], rates, madhab, baseline);
+      const block = el("div", { class: "member-block", "data-collapsed": "false" });
+
+      const headToggle = el("button", { type: "button", class: "member-head-toggle" }, [
+        el("span", { class: "member-chevron", text: "\u25BE" }),
+        el("div", null, [
+          el("div", { class: "name", text: m.name }),
+          el("div", { class: "muted", style: "font-size:12px", text: m.relationship + " \u00b7 Zakat amount: " + ZK.fmtINR(summary.zakat_due_inr) }),
+        ]),
+      ]);
+      headToggle.addEventListener("click", () => {
+        const collapsed = block.dataset.collapsed === "true";
+        block.dataset.collapsed = collapsed ? "false" : "true";
+      });
+
+      const head = el("div", { class: "member-head" }, [
+        headToggle,
+        el("div", { class: "btn-row" }, [
+          el("button", { class: "btn sm", text: "+ Asset", onclick: () => assetForm(m.id) }),
+          el("button", { class: "btn sm secondary", text: "+ Payment", onclick: () => paymentForm(m.id) }),
+          el("button", { class: "btn sm secondary", text: "Edit", onclick: () => memberForm(m) }),
+          el("button", { class: "btn sm danger", text: "Delete", onclick: () => confirmDialog("Delete member", "Delete " + m.name + " and all their assets and payments?", () => { Store.deleteMember(m.id); refreshAll(); toast("Member deleted"); }, "Delete", true) }),
+        ]),
+      ]);
+      block.appendChild(head);
+
+      const body = el("div", { class: "member-body" });
+
+      // Zakat breakdown (component-level, nisab, hawl pending) — ported from
+      // member_zakat_breakdown.html.
+      body.appendChild(memberBreakdownNode(summary));
+
+      // Assets
+      body.appendChild(el("div", { class: "member-section-title", text: "Assets" }));
+      if (!(m.assets || []).length) {
+        body.appendChild(el("div", { class: "muted", style: "font-size:13px", text: "No assets recorded." }));
+      } else {
+        const rows = m.assets.map((a) => {
+          const val = ZK.effectiveValuationInr(a, rates, baseline);
+          const detail = assetDetail(a);
+          const thumb = a.image ? el("img", { class: "asset-thumb", src: a.image, alt: "" }) : null;
+          const descCell = el("td", null, [thumb, document.createTextNode((thumb ? " " : "") + (a.description || a.category))]);
+          return el("tr", null, [
+            el("td", null, el("span", { class: "pill gray", text: a.category })),
+            descCell,
+            el("td", { class: "muted", text: detail }),
+            el("td", { class: "num", text: ZK.fmtINR(val) }),
+            el("td", { class: "num" }, [
+              el("button", { class: "link", text: "Edit", onclick: () => assetForm(m.id, a) }),
+              document.createTextNode("  "),
+              el("button", { class: "link", style: "color:#dc2626", text: "Delete", onclick: () => { Store.deleteAsset(m.id, a.id); refreshAll(); toast("Asset deleted"); } }),
+            ]),
+          ]);
+        });
+        const thead = el("thead", null, el("tr", null, [th("Category"), th("Description"), th("Details"), th("Value", true), th("", true)]));
+        body.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [thead, el("tbody", null, rows)]))));
+      }
+
+      // Payments
+      body.appendChild(el("div", { class: "member-section-title", text: "Zakat payments" }));
+      if (!(m.zakat_payments || []).length) {
+        body.appendChild(el("div", { class: "muted", style: "font-size:13px", text: "No payments recorded." }));
+      } else {
+        const rows = m.zakat_payments.map((p) => el("tr", null, [
+          el("td", { text: p.given_to }),
+          el("td", { class: "num", text: ZK.fmtINR(p.amount_inr) }),
+          el("td", { class: "num" }, [
+            el("button", { class: "link", text: "Edit", onclick: () => paymentForm(m.id, p) }),
+            document.createTextNode("  "),
+            el("button", { class: "link", style: "color:#dc2626", text: "Delete", onclick: () => { Store.deletePayment(m.id, p.id); refreshAll(); toast("Payment deleted"); } }),
+          ]),
+        ]));
+        const thead = el("thead", null, el("tr", null, [th("Given to"), th("Amount", true), th("", true)]));
+        body.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [thead, el("tbody", null, rows)]))));
+      }
+
+      block.appendChild(body);
+      panel.appendChild(block);
+    });
+  }
+
+  // Per-member Zakat breakdown card (component zakat, nisab, hawl-pending).
+  function memberBreakdownNode(s) {
+    const items = [];
+    function add(text) { items.push(el("div", { class: "bd-item", text: text })); }
+    if (s.gold_zakat_inr || s.total_gold_grams) add("Gold " + ZK.fmtGrams(s.total_gold_grams) + "g \u2192 " + ZK.fmtINR(s.gold_zakat_inr));
+    if (s.silver_zakat_inr || s.total_silver_grams) add("Silver " + ZK.fmtGrams(s.total_silver_grams) + "g (zakatable " + s.zakatable_silver_grams.toFixed(2) + "g) \u2192 " + ZK.fmtINR(s.silver_zakat_inr));
+    if (s.platinum_zakat_inr || s.total_platinum_grams) add("Platinum " + ZK.fmtGrams(s.total_platinum_grams) + "g \u2192 " + ZK.fmtINR(s.platinum_zakat_inr));
+    if (s.diamond_zakat_inr || s.total_diamond_carats) add("Diamond " + s.total_diamond_carats.toFixed(2) + " ct \u2192 " + ZK.fmtINR(s.diamond_zakat_inr));
+    if (s.cash_zakat_inr) add("Cash \u2192 " + ZK.fmtINR(s.cash_zakat_inr));
+    if (s.investments_zakat_inr) add("Investments \u2212 loans \u2192 " + ZK.fmtINR(s.investments_zakat_inr));
+    if (s.pf_zakat_inr) add("PF / EPF \u2192 " + ZK.fmtINR(s.pf_zakat_inr));
+    if (s.livestock_zakat_inr) add("Livestock (Sunnah tiers) \u2192 " + ZK.fmtINR(s.livestock_zakat_inr));
+    if (s.agriculture_zakat_inr) add("Agriculture (harvest) \u2192 " + ZK.fmtINR(s.agriculture_zakat_inr));
+    if (s.property_exempt_wealth_inr) items.push(el("div", { class: "bd-item" }, [el("span", { class: "wealth-col-exempt", text: "Property (home, rental)" }), document.createTextNode(" \u2192 " + ZK.fmtINR(s.property_exempt_wealth_inr) + " (not in Zakat)")]));
+    if (s.property_zakat_inr || s.property_wealth_inr) items.push(el("div", { class: "bd-item" }, [el("span", { class: "wealth-col-trade", text: "Property (for sale)" }), document.createTextNode(" \u2192 " + ZK.fmtINR(s.property_zakat_inr))]));
+    if (s.partnership_zakat_inr) add("Partnership \u2192 " + ZK.fmtINR(s.partnership_zakat_inr));
+    if (s.rikaz_zakat_inr) add("Rikaz (20%) \u2192 " + ZK.fmtINR(s.rikaz_zakat_inr));
+
+    const wrap = el("div", { class: "breakdown" });
+    wrap.appendChild(el("div", { class: "bd-head" }, [
+      document.createTextNode(s.member_name + " "),
+      el("span", { class: "pill " + (s.is_eligible ? "green" : "gray"), text: s.is_eligible ? "Eligible" : "Not eligible" }),
+    ]));
+    if (items.length) wrap.appendChild(el("div", { class: "bd-grid" }, items));
+    wrap.appendChild(el("div", { class: "bd-total", text:
+      "Nisab (" + s.nisab_basis + ") " + ZK.fmtINR(s.nisab_wealth_inr) + " / " + ZK.fmtINR(s.nisab_threshold_inr) +
+      " \u00b7 Due " + ZK.fmtINR(s.zakat_due_inr) + " \u00b7 Paid " + ZK.fmtINR(s.total_paid_inr) +
+      " \u00b7 Remaining " + ZK.fmtINR(Math.max(0, s.remaining_inr)) }));
+    if (s.hawl_pending_wealth_inr > 0) {
+      wrap.appendChild(el("div", { class: "bd-note warn", text: s.assets_pending_hawl + " asset(s) awaiting hawl (~354 lunar days): " + ZK.fmtINR(s.hawl_pending_wealth_inr) + " not included yet." }));
+    }
+    if (s.jewelry_exempt) {
+      wrap.appendChild(el("div", { class: "bd-note", text: "Tip: mark personal adornment on gold/silver/diamond assets to apply your school's jewelry exemption." }));
+    }
+    return wrap;
+  }
+
+  function assetDetail(a) {
+    const bits = [];
+    if (ZK.METAL_CATEGORIES.has(a.category) && a.category !== "Diamond" && a.weight_grams) {
+      bits.push(ZK.fmtGrams(a.weight_grams) + " g");
+      const pl = ZK.purityLabel(a);
+      if (pl) bits.push(pl);
+    }
+    if (a.category === "Diamond" && a.gem_carats) bits.push(ZK.fmtGrams(a.gem_carats) + " ct");
+    if (a.category === "Livestock") { if (a.quantity_count) bits.push(a.quantity_count + " head"); if (a.asset_subtype) bits.push(a.asset_subtype); }
+    if (a.category === "Agriculture" && a.asset_subtype) bits.push(a.asset_subtype);
+    if (a.category === "Property" && a.asset_subtype) bits.push(a.asset_subtype);
+    if (a.is_personal_jewelry) bits.push("personal jewelry");
+    if (a.acquired_year) bits.push("since " + a.acquired_year);
+    if (a.hawl_start_date) bits.push("hawl " + a.hawl_start_date);
+    return bits.join(" \u00b7 ");
+  }
+
+  // --- Member form ---
+  function memberForm(existing) {
+    const name = el("input", { type: "text", value: existing ? existing.name : "", placeholder: "e.g. Altamash, Afham, Athar, Abu Bakr" });
+    const rel = el("input", { type: "text", value: existing ? existing.relationship : "", placeholder: "e.g. Self, Spouse, Son" });
+    const body = el("form", null, [
+      field("Name", name),
+      field("Relationship", rel),
+    ]);
+    const save = el("button", { class: "btn", text: existing ? "Save" : "Add member", onclick: (e) => {
+      e.preventDefault();
+      if (!name.value.trim()) { toast("Name is required", "err"); return; }
+      if (existing) Store.updateMember(existing.id, name.value, rel.value);
+      else Store.addMember(name.value, rel.value);
+      closeModal(); refreshAll(); toast("Saved", "ok");
+    } });
+    openModal(existing ? "Edit member" : "Add family member", body, [
+      el("button", { class: "btn secondary", text: "Cancel", onclick: closeModal }), save,
+    ]);
+  }
+
+  // --- Asset form ---
+  function assetForm(memberId, existing) {
+    const rates = Store.getRates();
+    const cat = el("select");
+    ZK.CATEGORY_GROUPS.forEach((grp) => {
+      const og = el("optgroup", { label: grp[0] });
+      grp[1].forEach((c) => og.appendChild(el("option", { value: c, selected: existing && existing.category === c ? "selected" : null, text: c })));
+      cat.appendChild(og);
+    });
+    if (!existing) cat.value = "Cash";
+    else if (existing.category) cat.value = existing.category;
+
+    const desc = el("input", { type: "text", value: existing ? existing.description || "" : "", placeholder: "Description" });
+    const valuation = el("input", { type: "number", step: "0.01", value: existing && existing.valuation_inr != null ? existing.valuation_inr : "" });
+    const weight = el("input", { type: "number", step: "0.001", value: existing && existing.weight_grams != null ? existing.weight_grams : "" });
+    const puritySelect = el("select");
+    const purityCustom = el("input", { type: "text", placeholder: "e.g. 21, 22.5, 91.7% or 925.5" });
+    if (existing && existing.purity_value && !ZK.isPresetPurity(existing.category, existing.purity_value)) {
+      purityCustom.value = existing.purity_value;
+    }
+    const carats = el("input", { type: "number", step: "0.001", value: existing && existing.gem_carats != null ? existing.gem_carats : "" });
+    const subtype = el("select");
+    const quantity = el("input", { type: "number", step: "1", value: existing && existing.quantity_count != null ? existing.quantity_count : "" });
+    const acquiredYear = el("input", { type: "number", step: "1", value: existing && existing.acquired_year != null ? existing.acquired_year : "", placeholder: "e.g. 2021" });
+    const hawlStart = el("input", { type: "date", value: existing ? existing.hawl_start_date || "" : "" });
+    const jewelry = el("input", { type: "checkbox" });
+    if (existing && existing.is_personal_jewelry) jewelry.checked = true;
+    const balanceAsOf = el("input", { type: "date", value: existing ? existing.balance_as_of_date || "" : "" });
+    const empMonthly = el("input", { type: "number", step: "0.01", value: existing && existing.monthly_contribution_employee != null ? existing.monthly_contribution_employee : "" });
+    const erMonthly = el("input", { type: "number", step: "0.01", value: existing && existing.monthly_contribution_employer != null ? existing.monthly_contribution_employer : "" });
+    const annualRate = el("input", { type: "number", step: "0.01", value: existing && existing.annual_interest_rate != null ? existing.annual_interest_rate : "", placeholder: "8.25" });
+    const imageInput = el("input", { type: "file", accept: "image/*" });
+    let imageData = existing ? existing.image : null;
+    let imageName = existing ? existing.image_filename : null;
+    const imagePreview = el("div");
+    function renderImagePreview() {
+      clear(imagePreview);
+      if (imageData) {
+        imagePreview.appendChild(el("img", { class: "asset-thumb", style: "width:60px;height:60px", src: imageData, alt: "" }));
+        imagePreview.appendChild(el("button", { class: "link", style: "margin-left:10px;color:#dc2626", text: "Remove image", onclick: (e) => { e.preventDefault(); imageData = null; imageName = null; renderImagePreview(); } }));
+      }
+    }
+    renderImagePreview();
+    imageInput.addEventListener("change", () => {
+      const f = imageInput.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = (e) => { imageData = e.target.result; imageName = f.name; renderImagePreview(); };
+      reader.readAsDataURL(f);
+    });
+
+    const preview = el("div", { class: "preview" });
+
+    // Field containers
+    const fValuation = field("Value (INR)", valuation);
+    const fWeight = field("Gross weight (grams)", weight);
+    const fPurity = field("Karat (purity)", puritySelect);
+    const fPurityCustom = field("Custom purity", purityCustom, "Enter karat, fineness, % or decimal fraction.");
+    const fCarats = field("Carats", carats, "Diamond weight in carats. Leave value blank to auto-price from carats.");
+    const fSubtype = field("Type", subtype);
+    const fQuantity = field("Head count", quantity);
+    const fJewelry = el("div", { class: "field" }, el("label", { class: "checkbox-field" }, [jewelry, el("span", { text: " Personal jewelry (exempt in Shafi'i/Maliki/Hanbali)" })]));
+    const fBalanceAsOf = field("Balance as of date", balanceAsOf, "Date of the PF balance entered above.");
+    const fEmp = field("Employee monthly (INR)", empMonthly);
+    const fEr = field("Employer monthly (INR)", erMonthly);
+    const fRate = field("Annual interest rate (%)", annualRate);
+    const fHawl = field("Hawl start date", hawlStart, "When you began holding this wealth (for the 1-lunar-year rule). Optional.");
+    const fAcq = field("Acquired year", acquiredYear);
+    const grpMetal = el("div", { class: "field-group field-metal" }, [fWeight, fPurity, fPurityCustom]);
+    const grpDiamond = el("div", { class: "field-group field-diamond" }, [fCarats]);
+    const grpSubtype = el("div", { class: "field-group field-subtype" }, [fSubtype]);
+    const grpQuantity = el("div", { class: "field-group field-quantity" }, [fQuantity]);
+    const grpPf = el("div", { class: "field-group field-pf" }, [fBalanceAsOf, fEmp, fEr, fRate]);
+    const grpHawl = el("div", { class: "field-group field-hawl" }, el("div", { class: "field-row" }, [fAcq, fHawl]));
+
+    function setSubtypeOptions(category) {
+      const opts = category === "Property" ? ["personal", "rental", "trade"]
+        : category === "Agriculture" ? ["rain", "irrigated", "mixed"]
+        : category === "Livestock" ? ["sheep", "cattle", "camel"] : [];
+      clear(subtype);
+      opts.forEach((o) => subtype.appendChild(el("option", { value: o, selected: existing && (existing.asset_subtype || "") === o ? "selected" : null, text: o })));
+    }
+
+    function syncPurityFields(category) {
+      const purityLabel = fPurity.querySelector("label");
+      if (purityLabel) purityLabel.textContent = ZK.purityFieldLabel(category);
+      const saved = (existing && (existing.category === category) && existing.purity_value) ? existing.purity_value : null;
+      ZK.populatePuritySelect(puritySelect, category, saved);
+      const isCustom = puritySelect.value === "__custom__";
+      show(fPurityCustom, isCustom);
+      if (isCustom && saved) purityCustom.value = saved;
+      else if (!isCustom) purityCustom.value = "";
+      purityCustom.placeholder = category === "Gold"
+        ? "e.g. 21, 22.5, 91.7%, 0.917"
+        : "e.g. 925.5, 92.5%, 0.925";
+    }
+
+    function currentPurityValue() {
+      return ZK.resolvePurityValue(puritySelect.value, purityCustom.value);
+    }
+
+    function updateVisibility() {
+      const c = cat.value;
+      const isMetalWeight = (c === "Gold" || c === "Silver" || c === "Platinum");
+      const isDiamond = c === "Diamond";
+      const isPF = c === "PF";
+      const isLivestock = c === "Livestock";
+      const isJewelryCat = ZK.JEWELRY_CATEGORIES.has(c);
+      const hasSubtype = (c === "Property" || c === "Agriculture" || c === "Livestock");
+      const isHawlCat = (c !== "Agriculture" && c !== "Rikaz");
+
+      show(grpMetal, isMetalWeight);
+      show(grpDiamond, isDiamond);
+      show(grpSubtype, hasSubtype);
+      show(grpQuantity, isLivestock);
+      show(grpPf, isPF);
+      show(grpHawl, isHawlCat);
+      show(fJewelry, isJewelryCat);
+      // value field label
+      const valLabel = fValuation.querySelector("label");
+      if (valLabel) {
+        if (isLivestock) valLabel.textContent = "Value per head (INR)";
+        else if (isPF) valLabel.textContent = "Current PF balance (INR)";
+        else if (isDiamond) valLabel.textContent = "Value (INR, optional if carats set)";
+        else valLabel.textContent = "Value (INR)";
+      }
+      // hide manual value for metal-by-weight (computed)
+      show(fValuation, !isMetalWeight);
+      if (isMetalWeight) syncPurityFields(c);
+      if (hasSubtype) setSubtypeOptions(c);
+      updatePreview();
+    }
+
+    function updatePreview() {
+      const c = cat.value;
+      if (c === "Gold" || c === "Silver" || c === "Platinum") {
+        const stub = { category: c, weight_grams: ZK.num(weight.value), purity_value: currentPurityValue(), valuation_inr: 0 };
+        if (ZK.num(weight.value) > 0) {
+          const v = ZK.metalMarketValue(stub, rates, 0);
+          preview.textContent = "Market value: " + ZK.fmtINR(v) + " (" + ZK.purityLabel(stub) + ")";
+        } else preview.textContent = "";
+      } else if (c === "Diamond") {
+        const stub = { category: c, gem_carats: ZK.num(carats.value), valuation_inr: ZK.num(valuation.value) };
+        preview.textContent = "Market value: " + ZK.fmtINR(ZK.metalMarketValue(stub, rates, 0));
+      } else if (c === "Livestock") {
+        const r = ZK.computeLivestockZakat(ZK.num(quantity.value), subtype.value, ZK.num(valuation.value));
+        preview.textContent = r.below_nisab ? r.description : "Due: " + r.description + " \u2248 " + ZK.fmtINR(r.zakat_inr);
+      } else if (c === "Agriculture") {
+        const res = ZK.agricultureZakatInr(ZK.num(valuation.value), subtype.value);
+        preview.textContent = "Zakat: " + ZK.fmtINR(res[0]) + " (" + res[2] + ")";
+      } else preview.textContent = "";
+    }
+
+    [weight, purityCustom, carats, valuation, quantity].forEach((inp) => inp.addEventListener("input", updatePreview));
+    puritySelect.addEventListener("change", () => {
+      show(fPurityCustom, puritySelect.value === "__custom__");
+      if (puritySelect.value !== "__custom__") purityCustom.value = "";
+      updatePreview();
+    });
+    subtype.addEventListener("change", updatePreview);
+    cat.addEventListener("change", updateVisibility);
+
+    const body = el("form", null, [
+      field("Category", cat),
+      field("Description", desc),
+      fValuation,
+      grpMetal, grpDiamond, grpSubtype, grpQuantity, grpPf, grpHawl,
+      fJewelry,
+      field("Photo (optional)", imageInput, "Stored locally in your browser and included in Excel backups."),
+      imagePreview,
+      preview,
+    ]);
+
+    setSubtypeOptions(cat.value);
+    updateVisibility();
+
+    const save = el("button", { class: "btn", text: existing ? "Save asset" : "Add asset", onclick: (e) => {
+      e.preventDefault();
+      const c = cat.value;
+      const data = {
+        category: c,
+        description: desc.value.trim(),
+        valuation_inr: ZK.num(valuation.value),
+        weight_grams: (c === "Gold" || c === "Silver" || c === "Platinum") && weight.value !== "" ? ZK.num(weight.value) : null,
+        gem_carats: c === "Diamond" && carats.value !== "" ? ZK.num(carats.value) : null,
+        purity_value: (c === "Gold" || c === "Silver" || c === "Platinum") ? currentPurityValue() : null,
+        asset_subtype: (c === "Property" || c === "Agriculture" || c === "Livestock") ? subtype.value : null,
+        quantity_count: c === "Livestock" && quantity.value !== "" ? parseInt(quantity.value, 10) : null,
+        acquired_year: acquiredYear.value !== "" ? parseInt(acquiredYear.value, 10) : null,
+        hawl_start_date: hawlStart.value || null,
+        is_personal_jewelry: ZK.JEWELRY_CATEGORIES.has(c) ? jewelry.checked : false,
+        balance_as_of_date: c === "PF" ? (balanceAsOf.value || null) : null,
+        monthly_contribution_employee: c === "PF" && empMonthly.value !== "" ? ZK.num(empMonthly.value) : null,
+        monthly_contribution_employer: c === "PF" && erMonthly.value !== "" ? ZK.num(erMonthly.value) : null,
+        annual_interest_rate: c === "PF" && annualRate.value !== "" ? ZK.num(annualRate.value) : null,
+        image: imageData || null,
+        image_filename: imageData ? (imageName || "image.png") : null,
+      };
+      const saved = existing ? Store.updateAsset(memberId, existing.id, data) : Store.addAsset(memberId, data);
+      // Record a current-year value snapshot for tracked categories so trends &
+      // yearly review reflect this balance (mirrors the server's on-create/update hook).
+      if (saved && ZK.TRACKED_CATEGORIES.has(saved.category)) {
+        const cy = ZK.todayUTC().getUTCFullYear();
+        Store.setSnapshot(memberId, saved.id, cy, ZK.snapshotState(saved, cy));
+      }
+      closeModal(); refreshAll(); toast("Asset saved", "ok");
+    } });
+
+    openModal(existing ? "Edit asset" : "Add asset", body, [
+      el("button", { class: "btn secondary", text: "Cancel", onclick: closeModal }), save,
+    ]);
+  }
+
+  // Show/hide form field blocks (class-based so grid/layout cannot override).
+  function show(node, visible) {
+    if (!node) return;
+    node.classList.toggle("field-hidden", !visible);
+    node.querySelectorAll("input, select, textarea").forEach((inp) => { inp.disabled = !visible; });
+  }
+
+  function setPanelCollapsed(toggle, body, collapsed) {
+    if (!toggle || !body) return;
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    body.dataset.collapsed = collapsed ? "true" : "false";
+  }
+
+  function setAllPanelsCollapsed(root, collapsed) {
+    if (!root) return;
+    root.querySelectorAll(".panel-collapse-toggle").forEach((toggle) => {
+      const id = toggle.getAttribute("aria-controls");
+      const body = id ? root.querySelector("#" + id) : toggle.nextElementSibling;
+      if (body && body.classList.contains("panel-collapse-body")) {
+        setPanelCollapsed(toggle, body, collapsed);
+      }
+    });
+  }
+
+  // --- Payment form ---
+  function paymentForm(memberId, existing) {
+    const given = el("input", { type: "text", value: existing ? existing.given_to || "" : "", placeholder: "e.g. Local masjid, relative" });
+    const amount = el("input", { type: "number", step: "0.01", value: existing && existing.amount_inr != null ? existing.amount_inr : "", placeholder: "0.00" });
+    const body = el("form", null, [field("Given to", given), field("Amount (INR)", amount)]);
+    const save = el("button", { class: "btn", text: existing ? "Save payment" : "Add payment", onclick: (e) => {
+      e.preventDefault();
+      if (!given.value.trim() || ZK.num(amount.value) <= 0) { toast("Enter recipient and amount", "err"); return; }
+      if (existing) Store.updatePayment(memberId, existing.id, given.value, amount.value);
+      else Store.addPayment(memberId, given.value, amount.value);
+      closeModal(); refreshAll(); toast(existing ? "Payment updated" : "Payment added", "ok");
+    } });
+    openModal(existing ? "Edit Zakat payment" : "Record Zakat payment", body, [
+      el("button", { class: "btn secondary", text: "Cancel", onclick: closeModal }), save,
+    ]);
+  }
+
+  // --- Rates ---
+  function renderRates() {
+    const panel = document.getElementById("tab-rates");
+    clear(panel);
+    const rates = Store.getRates();
+    const madhab = Store.getMadhab();
+
+    const mp = el("div", { class: "panel" });
+    mp.appendChild(el("h2", { text: "Calculation school (madhhab)" }));
+    mp.appendChild(el("p", { class: "sub", text: "Affects nisab basis, jewelry exemption, and debt deduction." }));
+    const madhabSel = el("select", null, Object.keys(ZK.MADHAB_RULES).map((k) => el("option", { value: k, selected: k === madhab ? "selected" : null, text: ZK.MADHAB_RULES[k].label })));
+    madhabSel.addEventListener("change", () => { Store.setMadhab(madhabSel.value); toast("School updated", "ok"); refreshAll(); });
+    mp.appendChild(field("School", madhabSel));
+    panel.appendChild(mp);
+
+    const rp = el("div", { class: "panel" });
+    rp.appendChild(el("h2", { text: "Market rates" }));
+    rp.appendChild(el("p", { class: "sub", html: "Enter rates manually, or fetch live spot prices from the internet. The app stays in your browser \u2014 fetching is optional and only happens when you click below." }));
+    const gold = el("input", { type: "number", step: "0.01", value: rates.gold_inr_per_gram });
+    const silver = el("input", { type: "number", step: "0.01", value: rates.silver_inr_per_gram });
+    const plat = el("input", { type: "number", step: "0.01", value: rates.platinum_inr_per_gram });
+    const dia = el("input", { type: "number", step: "0.01", value: rates.diamond_inr_per_carat });
+    const formNode = el("form", null, [
+      el("div", { class: "field-row" }, [field("Gold (INR/gram, 24K)", gold), field("Silver (INR/gram)", silver)]),
+      el("div", { class: "field-row" }, [field("Platinum (INR/gram)", plat), field("Diamond (INR/carat)", dia)]),
+    ]);
+    rp.appendChild(formNode);
+
+    const sourceBox = el("div", { class: "rate-sources" });
+
+    const fetchBtn = el("button", { class: "btn secondary", text: "\u2193 Fetch live rates from the internet" });
+    fetchBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (!Rates) { toast("Live fetch unavailable", "err"); return; }
+      const prev = fetchBtn.textContent;
+      fetchBtn.disabled = true;
+      fetchBtn.textContent = "Fetching\u2026";
+      clear(sourceBox);
+      Rates.fetchLiveRates(dia.value)
+        .then((res) => {
+          if (res.rates.gold_inr_per_gram > 0) gold.value = res.rates.gold_inr_per_gram.toFixed(2);
+          if (res.rates.silver_inr_per_gram > 0) silver.value = res.rates.silver_inr_per_gram.toFixed(2);
+          if (res.rates.platinum_inr_per_gram > 0) plat.value = res.rates.platinum_inr_per_gram.toFixed(2);
+          renderRateSources(sourceBox, res);
+          toast(res.ok ? "Live rates fetched \u2014 review and Save" : "Some rates couldn't be fetched", res.ok ? "ok" : "err");
+        })
+        .catch((err) => {
+          clear(sourceBox);
+          sourceBox.appendChild(el("div", { class: "notice warn", text: "Could not fetch live rates: " + err.message + ". Check your internet connection, or enter rates manually." }));
+          toast("Live fetch failed", "err");
+        })
+        .finally(() => { fetchBtn.disabled = false; fetchBtn.textContent = prev; });
+    });
+
+    rp.appendChild(el("div", { class: "btn-row" }, [
+      el("button", { class: "btn", text: "Save rates", onclick: (e) => {
+        e.preventDefault();
+        Store.setRates({ gold_inr_per_gram: gold.value, silver_inr_per_gram: silver.value, platinum_inr_per_gram: plat.value, diamond_inr_per_carat: dia.value });
+        toast("Rates saved", "ok"); refreshAll();
+      } }),
+      fetchBtn,
+    ]));
+
+    const autoWrap = el("div", { class: "subpanel" });
+    const autoChk = el("input", { type: "checkbox" });
+    autoChk.checked = Store.getAutoRates();
+    autoChk.addEventListener("change", () => {
+      Store.setAutoRates(autoChk.checked);
+      toast(autoChk.checked ? "Auto-fetch on load enabled" : "Auto-fetch on load disabled", "ok");
+    });
+    autoWrap.appendChild(el("label", { class: "checkbox-field" }, [autoChk, el("span", { text: " Automatically fetch live + yearly rates each time the app loads" })]));
+    autoWrap.appendChild(el("div", { class: "help", text: "On by default. Current gold/silver/platinum and the per-year history refresh from the internet on startup (diamond stays manual; your manual year overrides are never replaced). Turn off to stay fully offline." }));
+    rp.appendChild(autoWrap);
+
+    rp.appendChild(sourceBox);
+    panel.appendChild(rp);
+
+    panel.appendChild(renderYearlyRatesPanel());
+    panel.appendChild(renderRatesGraphPanel());
+  }
+
+  // --- Historical / yearly rates ---
+  function renderYearlyRatesPanel() {
+    const panel = el("div", { class: "panel" });
+    panel.appendChild(el("h2", { text: "Historical / yearly rates" }));
+    panel.appendChild(el("p", { class: "sub", html: "Per-year metal rates for year-by-year valuation. Gold &amp; USD/INR are fetched from the internet; silver/platinum are estimated in-browser (edit to override). Used when an asset is valued as of a past year." }));
+
+    const now = ZK.todayUTC().getUTCFullYear();
+    const startIn = el("input", { type: "number", step: "1", value: now - 5, style: "max-width:110px" });
+    const endIn = el("input", { type: "number", step: "1", value: now, style: "max-width:110px" });
+    const histBox = el("div", { class: "rate-sources" });
+
+    const fetchBtn = el("button", { class: "btn secondary", text: "\u2193 Fetch yearly rates from the internet" });
+    fetchBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (!History) { toast("Historical fetch unavailable", "err"); return; }
+      const prev = fetchBtn.textContent;
+      fetchBtn.disabled = true; fetchBtn.textContent = "Fetching\u2026";
+      clear(histBox);
+      History.fetchHistoricalRates(startIn.value, endIn.value, Store.getRates())
+        .then((res) => {
+          const years = Object.keys(res.ratesByYear);
+          years.forEach((y) => Store.setYearlyRate(parseInt(y, 10), res.ratesByYear[y], { is_estimated: true, is_user_override: false, rate_source: "internet" }));
+          (res.warnings || []).forEach((w) => histBox.appendChild(el("div", { class: "notice warn", text: w })));
+          toast(years.length ? "Fetched " + years.length + " year(s)" : "No years fetched", years.length ? "ok" : "err");
+          renderRates();
+        })
+        .catch((err) => { histBox.appendChild(el("div", { class: "notice warn", text: "Fetch failed: " + err.message })); toast("Historical fetch failed", "err"); })
+        .finally(() => { fetchBtn.disabled = false; fetchBtn.textContent = prev; });
+    });
+
+    panel.appendChild(el("div", { class: "field-row" }, [field("From year", startIn), field("To year", endIn)]));
+    panel.appendChild(el("div", { class: "btn-row" }, fetchBtn));
+    panel.appendChild(histBox);
+
+    // Existing yearly rows
+    const rows = Store.yearlyRates().slice().sort((a, b) => b.year - a.year);
+    if (rows.length) {
+      const trs = rows.map((r) => {
+        const g = el("input", { type: "number", step: "0.01", value: r.gold_inr_per_gram, style: "max-width:110px" });
+        const s = el("input", { type: "number", step: "0.01", value: r.silver_inr_per_gram, style: "max-width:100px" });
+        const p = el("input", { type: "number", step: "0.01", value: r.platinum_inr_per_gram, style: "max-width:110px" });
+        const d = el("input", { type: "number", step: "0.01", value: r.diamond_inr_per_carat, style: "max-width:120px" });
+        const srcPill = el("span", { class: "pill " + (r.is_user_override ? "green" : "gray"), text: r.is_user_override ? "manual" : (r.is_estimated ? "estimated" : (r.rate_source || "internet")) });
+        const saveBtn = el("button", { class: "link", text: "Save", onclick: () => {
+          Store.setYearlyRate(r.year, { gold_inr_per_gram: g.value, silver_inr_per_gram: s.value, platinum_inr_per_gram: p.value, diamond_inr_per_carat: d.value }, { is_estimated: false, is_user_override: true, rate_source: "manual" });
+          toast("Saved " + r.year, "ok"); renderRates();
+        } });
+        const delBtn = el("button", { class: "link", style: "color:#dc2626", text: "Delete", onclick: () => { Store.deleteYearlyRate(r.year); toast("Deleted " + r.year); renderRates(); } });
+        return el("tr", null, [
+          el("td", null, el("strong", { text: String(r.year) })),
+          el("td", { class: "num" }, g), el("td", { class: "num" }, s),
+          el("td", { class: "num" }, p), el("td", { class: "num" }, d),
+          el("td", null, srcPill),
+          el("td", { class: "num" }, [saveBtn, document.createTextNode("  "), delBtn]),
+        ]);
+      });
+      const thead = el("thead", null, el("tr", null, [th("Year"), th("Gold /g", true), th("Silver /g", true), th("Platinum /g", true), th("Diamond /ct", true), th("Source"), th("", true)]));
+      panel.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [thead, el("tbody", null, trs)]))));
+    } else {
+      panel.appendChild(el("div", { class: "empty", text: "No yearly rates yet. Fetch a range above, or add a year manually below." }));
+    }
+
+    // Manual add-year row
+    const yIn = el("input", { type: "number", step: "1", value: now, style: "max-width:110px" });
+    const yg = el("input", { type: "number", step: "0.01", placeholder: "Gold /g", style: "max-width:110px" });
+    const ys = el("input", { type: "number", step: "0.01", placeholder: "Silver /g", style: "max-width:100px" });
+    const yp = el("input", { type: "number", step: "0.01", placeholder: "Platinum /g", style: "max-width:110px" });
+    const yd = el("input", { type: "number", step: "0.01", placeholder: "Diamond /ct", style: "max-width:120px" });
+    const addBtn = el("button", { class: "btn secondary", text: "Add / update year", onclick: (e) => {
+      e.preventDefault();
+      const yr = parseInt(yIn.value, 10);
+      if (!yr) { toast("Enter a year", "err"); return; }
+      Store.setYearlyRate(yr, { gold_inr_per_gram: yg.value, silver_inr_per_gram: ys.value, platinum_inr_per_gram: yp.value, diamond_inr_per_carat: yd.value }, { is_estimated: false, is_user_override: true, rate_source: "manual" });
+      toast("Saved " + yr, "ok"); renderRates();
+    } });
+    const addWrap = el("div", { class: "subpanel" });
+    addWrap.appendChild(el("div", { class: "member-section-title", text: "Add a year manually" }));
+    addWrap.appendChild(el("div", { class: "field-row" }, [field("Year", yIn), field("Gold /g", yg), field("Silver /g", ys)]));
+    addWrap.appendChild(el("div", { class: "field-row" }, [field("Platinum /g", yp), field("Diamond /ct", yd)]));
+    addWrap.appendChild(el("div", { class: "btn-row" }, addBtn));
+    panel.appendChild(addWrap);
+
+    return panel;
+  }
+
+  function renderRateSources(box, res) {
+    clear(box);
+    box.appendChild(el("p", { class: "sub", text: "Fetched " + res.fetched_at.toLocaleString() + (res.usd_inr ? " \u00b7 USD/INR \u20b9" + res.usd_inr.toFixed(2) : "") + ". Click Save rates to apply." }));
+    const order = ["gold_inr_per_gram", "silver_inr_per_gram", "platinum_inr_per_gram", "diamond_inr_per_carat"];
+    const ul = el("ul", { class: "source-list" });
+    order.forEach((k) => {
+      if (res.sources[k]) ul.appendChild(el("li", { text: res.sources[k] }));
+    });
+    box.appendChild(ul);
+    (res.warnings || []).forEach((w) => box.appendChild(el("div", { class: "notice warn", text: w })));
+  }
+
+  // --- Backup & restore ---
+  function renderBackup() {
+    const panel = document.getElementById("tab-backup");
+    clear(panel);
+
+    const p = el("div", { class: "panel" });
+    p.appendChild(el("h2", { text: "Backup & restore" }));
+    p.appendChild(el("p", { class: "sub", html: "Export all your data (members, assets, asset images, payments, rates) to an Excel file. Import it to restore on this or any device \u2014 it's also compatible with the server version of this app." }));
+
+    p.appendChild(el("div", { class: "btn-row" }, [
+      el("button", { class: "btn", text: "Download full backup (.xlsx)", onclick: () => { try { Excel.exportBackup(); toast("Backup downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
+      el("button", { class: "btn secondary", text: "Download Zakat report (.xlsx)", onclick: () => { try { Excel.exportReport(); toast("Report downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
+    ]));
+    p.appendChild(el("p", { class: "help", text: "The full backup restores everything (members, assets, images, snapshots, rates). The Zakat report is a readable per-member summary for sharing or printing." }));
+
+    const importPanel = el("div", { class: "panel" });
+    importPanel.appendChild(el("h2", { text: "Import backup" }));
+    importPanel.appendChild(el("div", { class: "notice warn", text: "Importing replaces ALL current data in this browser." }));
+    const fileInput = el("input", { type: "file", accept: ".xlsx" });
+    const confirmChk = el("input", { type: "checkbox" });
+    importPanel.appendChild(field("Backup .xlsx file", fileInput));
+    importPanel.appendChild(el("div", { class: "field" }, el("label", { class: "checkbox-field" }, [confirmChk, el("span", { text: " I understand this will overwrite my current data." })])));
+    importPanel.appendChild(el("button", { class: "btn", text: "Import backup", onclick: () => {
+      if (!fileInput.files[0]) { toast("Choose a file first", "err"); return; }
+      if (!confirmChk.checked) { toast("Please confirm the overwrite", "err"); return; }
+      Excel.importBackupFromFile(fileInput.files[0]).then((counts) => {
+        refreshAll();
+        toast("Imported " + counts.members + " member(s), " + counts.assets + " asset(s), " + counts.images + " image(s), " + (counts.snapshots || 0) + " snapshot(s)", "ok");
+        document.querySelector('[data-tab="dashboard"]').click();
+      }).catch((err) => toast("Import failed: " + err.message, "err"));
+    } }));
+    panel.appendChild(p);
+    panel.appendChild(importPanel);
+
+    const danger = el("div", { class: "panel" });
+    danger.appendChild(el("h2", { text: "Clear all data" }));
+    danger.appendChild(el("p", { class: "sub", text: "Erase everything stored in this browser. Export a backup first if you want to keep it." }));
+    danger.appendChild(el("button", { class: "btn danger", text: "Clear all data", onclick: () => confirmDialog("Clear all data", "This permanently deletes all members, assets, payments and rates from this browser. Continue?", () => { Store.clearAll(); refreshAll(); toast("All data cleared"); }, "Clear everything", true) }));
+    panel.appendChild(danger);
+  }
+
+  // --- Guide & FAQ (ported from zakat_guide.html / zakat_faq.html) ---
+  let guideView = "guide"; // "guide" | "faq"
+
+  // Button-driven collapse (same pattern as the server app's panel_section macro).
+  function collapsible(title, bodyNodes, expanded) {
+    const bodyId = "panel-" + Math.random().toString(36).slice(2, 10);
+    const toggle = el("button", {
+      type: "button",
+      class: "panel-collapse-toggle",
+      "aria-expanded": expanded ? "true" : "false",
+      "aria-controls": bodyId,
+    }, [
+      el("span", { class: "panel-chevron", text: "\u25BE" }),
+      el("span", { text: title }),
+    ]);
+    const body = el("div", {
+      class: "panel-collapse-body",
+      id: bodyId,
+      "data-collapsed": expanded ? "false" : "true",
+    }, bodyNodes);
+    toggle.addEventListener("click", () => {
+      const collapsed = body.dataset.collapsed === "true";
+      setPanelCollapsed(toggle, body, !collapsed);
+    });
+    return el("div", { class: "collapsible-panel" }, [toggle, body]);
+  }
+
+  function html(tag, markup, cls) { return el(tag, cls ? { class: cls, html: markup } : { html: markup }); }
+
+  function renderGuide() {
+    const panel = document.getElementById("tab-guide");
+    clear(panel);
+    const madhab = Store.getMadhab();
+    const rules = ZK.MADHAB_RULES[madhab];
+    const allMadhabs = ZK.MADHAB_RULES;
+
+    // Sub-navigation: About / FAQ
+    const navPanel = el("div", { class: "panel" });
+    navPanel.appendChild(el("h2", { text: "Learn about Zakat" }));
+    const subnav = el("div", { class: "subnav" }, [
+      el("button", { class: "subnav-btn " + (guideView === "guide" ? "active" : ""), text: "About Zakat", onclick: () => { guideView = "guide"; renderGuide(); } }),
+      el("button", { class: "subnav-btn " + (guideView === "faq" ? "active" : ""), text: "FAQ", onclick: () => { guideView = "faq"; renderGuide(); } }),
+    ]);
+    navPanel.appendChild(subnav);
+    navPanel.appendChild(el("p", { class: "sub", text: "Current school: " + rules.label + " (change it on the Market Rates tab)." }));
+    const expandRow = el("div", { class: "btn-row" }, [
+      el("button", { class: "link", text: "Expand all", onclick: () => setAllPanelsCollapsed(panel, false) }),
+      el("button", { class: "link", text: "Collapse all", onclick: () => setAllPanelsCollapsed(panel, true) }),
+    ]);
+    navPanel.appendChild(expandRow);
+    panel.appendChild(navPanel);
+
+    const body = el("div", { class: "panel guide-panel" });
+    if (guideView === "guide") buildGuideSections(body, madhab, rules, allMadhabs);
+    else buildFaqSections(body, madhab, rules);
+    panel.appendChild(body);
+  }
+
+  function buildGuideSections(root, madhab, rules, allMadhabs) {
+    const goldRate = ZK.DEFAULTS.gold_inr_per_gram, silverRate = ZK.DEFAULTS.silver_inr_per_gram;
+    const nisabLine = rules.nisab_basis === "silver"
+      ? "<strong>" + ZK.NISAB_SILVER_GRAMS.toFixed(1) + " g \u00d7 silver \u20b9/g</strong>"
+      : "<strong>" + ZK.NISAB_GOLD_GRAMS.toFixed(1) + " g \u00d7 gold \u20b9/g</strong>";
+    const jewelryLine = rules.jewelry_exempt
+      ? "Mark <strong>personal adornment</strong> per item to exempt worn pieces (" + rules.label + ")."
+      : "All gold and silver counts, including jewelry (Hanafi).";
+    const debtLine = rules.debt_deduction === "none" ? "Not deducted (" + rules.label + ")"
+      : rules.debt_deduction === "cash_only" ? "From cash only" : "Deducted from investments";
+
+    root.appendChild(collapsible("About this app", [
+      html("p", "Household Zakat calculator for families: add <strong>family members</strong>, record <strong>assets</strong> in INR, set <strong>market rates</strong>, and see <strong>due, paid, and remaining</strong> on the dashboard. The <strong>Analytics</strong> tab shows year-over-year charts; <strong>Backup &amp; Restore</strong> exports an Excel backup or a readable report. Everything runs in your browser; data stays on your device."),
+      html("ul", "<li><strong>Not a fatwa</strong> \u2014 confirm with your scholar.</li><li><strong>2.5%</strong> on zakatable wealth at/above nisab; madhhab rules for jewelry and debts.</li><li><strong>Zakat baseline:</strong> first Friday of Ramadan (shown in the header).</li>"),
+    ], true));
+
+    root.appendChild(collapsible("What is Zakat?", [
+      el("p", { class: "arabic", lang: "ar", dir: "rtl", text: "\u0632\u0643\u0627\u0629" }),
+      html("p", "<strong>Zakat</strong> is the obligatory annual charity on surplus wealth held for one lunar year \u2014 the third pillar of Islam. Unlike voluntary <em>sadaqah</em>, it is a fixed right of the poor once wealth reaches <em>nisab</em> (\u0646\u0635\u0627\u0628)."),
+      html("p", "Recipients are named in the Qur\u2019an (9:60): poor, needy, collectors, those whose hearts are reconciled, captives, debtors, in Allah\u2019s cause, and stranded travellers."),
+    ]));
+
+    root.appendChild(collapsible("When and how it is due", [
+      html("ul",
+        "<li><strong>Hawl:</strong> ~354 lunar days of possession \u2014 set <strong>Hawl start</strong> on each asset.</li>" +
+        "<li><strong>Rate:</strong> <strong>2.5%</strong> (one-fortieth) when total zakatable wealth \u2265 nisab.</li>" +
+        "<li><strong>Nisab (" + rules.label + "):</strong> " + nisabLine + ". Change school on the Market Rates tab.</li>" +
+        "<li><strong>Jewelry:</strong> " + jewelryLine + "</li>" +
+        "<li><strong>Yearly, not monthly:</strong> enter <strong>total cash</strong> on your Zakat date \u2014 not 2.5% on each salary or rent cheque.</li>" +
+        "<li><strong>Zakat al-Fitr</strong> is separate and not calculated here.</li>"),
+    ]));
+
+    const calcTable =
+      "<table class='guide-table'><thead><tr><th>Type</th><th>In this app</th></tr></thead><tbody>" +
+      "<tr><td>Gold / silver / platinum / diamond</td><td>Grams or market value \u2192 share of <strong>2.5%</strong> when above nisab</td></tr>" +
+      "<tr><td>Cash / PF / stocks / business</td><td><strong>2.5% yearly</strong> on balances (PF projected from statement + contributions)</td></tr>" +
+      "<tr><td>Property</td><td>Home/rental building exempt; <strong>for sale</strong> \u2192 2.5% on market value; rent \u2192 <strong>Cash</strong></td></tr>" +
+      "<tr><td>Livestock / agriculture / rikaz</td><td>Sunnah tiers / harvest % / <strong>20% once</strong> for rikaz</td></tr>" +
+      "<tr><td>Liabilities</td><td>" + debtLine + "</td></tr>" +
+      "<tr><td>Remaining</td><td>Due \u2212 payments</td></tr>" +
+      "</tbody></table>";
+    root.appendChild(collapsible("How this app calculates", [
+      html("p", "Per-member assets \u2192 values at baseline date \u2192 nisab check \u2192 rates \u2192 minus payments.", "sub"),
+      html("div", calcTable, "table-wrap"),
+      html("p", "Session rates until you fetch: gold \u20b9" + Math.round(goldRate) + "/g, silver \u20b9" + silverRate + "/g.", "help"),
+    ]));
+
+    // Schools comparison table (current highlighted)
+    const keys = Object.keys(allMadhabs);
+    let headRow = "<tr><th>Rule</th>";
+    keys.forEach((k) => { headRow += "<th" + (k === madhab ? " class='hl'" : "") + ">" + allMadhabs[k].label + (k === madhab ? " \u2713" : "") + "</th>"; });
+    headRow += "</tr>";
+    function row(label, fn) {
+      let r = "<tr><td>" + label + "</td>";
+      keys.forEach((k) => { r += "<td" + (k === madhab ? " class='hl'" : "") + ">" + fn(allMadhabs[k]) + "</td>"; });
+      return r + "</tr>";
+    }
+    const schoolsTable = "<table class='guide-table'><thead>" + headRow + "</thead><tbody>" +
+      row("Nisab", (r) => r.nisab_basis === "silver" ? "Silver" : "Gold") +
+      row("Worn jewelry", (r) => r.jewelry_exempt ? "Can exempt" : "All gold/silver") +
+      row("Debts", (r) => r.debt_deduction === "none" ? "None" : (r.debt_deduction === "cash_only" ? "Cash only" : "Full")) +
+      "</tbody></table>";
+    root.appendChild(collapsible("Schools of thought", [
+      html("p", "Current: <strong>" + rules.label + "</strong> (change on the Market Rates tab).", "sub"),
+      html("div", schoolsTable, "table-wrap"),
+    ]));
+
+    root.appendChild(collapsible("Using the app", [
+      html("ol",
+        "<li><strong>Dashboard</strong> \u2014 rates summary, household totals, members &amp; assets.</li>" +
+        "<li><strong>Analytics</strong> \u2014 wealth/Zakat over time and per-component breakdown.</li>" +
+        "<li><strong>Yearly Review</strong> \u2014 record what each asset was worth in past years.</li>" +
+        "<li><strong>Market Rates</strong> \u2014 school selector, manual/live rates, yearly history.</li>" +
+        "<li><strong>Backup &amp; Restore</strong> \u2014 Excel backup/report and import.</li>"),
+    ]));
+
+    root.appendChild(collapsible("Disclaimer", [
+      html("p", "Educational tool only. Confirm amounts and recipients with a <strong>qualified scholar</strong>. Market rates are indicative.", "sub"),
+    ]));
+  }
+
+  function buildFaqSections(root, madhab, rules) {
+    const jewelryAns = rules.jewelry_exempt
+      ? "Under <strong>" + rules.label + "</strong>, tick <strong>personal adornment</strong> on worn pieces; investment gold stays zakatable."
+      : "Under <strong>Hanafi</strong>, <strong>all gold and silver</strong> is generally zakatable, including jewellery.";
+    const debtAns = rules.debt_deduction === "none" ? "debts are <strong>not deducted</strong>."
+      : rules.debt_deduction === "cash_only" ? "debts reduce <strong>cash only</strong>."
+      : "debts reduce <strong>investments</strong> (stocks/business).";
+    const faqs = [
+      ["Is this app a fatwa or legal advice?", "<strong>No.</strong> It is a household calculator with scholar-reviewed defaults. Confirm with a qualified scholar before paying."],
+      ["What is nisab (\u0646\u0635\u0627\u0628)?", "The minimum zakatable wealth before Zakat is due. This app uses gold or silver weights \u00d7 rates per your <strong>" + rules.label + "</strong> setting."],
+      ["Why does the dashboard show \u20b90 Zakat due?", "Usually: below <strong>nisab</strong>; still in <strong>hawl</strong>; property is <strong>personal/rental</strong>; jewelry marked <strong>personal adornment</strong> (where exempt); or values not entered yet."],
+      ["Do I use purchase price or today\u2019s value?", "<strong>Today\u2019s market value</strong> for cash, shares, trade property, and metals. Zakat is on what wealth is worth at your Zakat date, not original cost."],
+      ["Do I pay Zakat on the house I live in?", "<strong>No</strong> on the building \u2014 <strong>Property \u2192 Personal residence</strong>. It may show on Analytics for records but is excluded from Zakat."],
+      ["I have two houses \u2014 what do I enter?", "Two <strong>Property</strong> assets: <strong>Personal residence</strong> for your home, <strong>Rental</strong> or <strong>For sale / trade</strong> for the other. Rent received \u2192 <strong>Cash</strong>."],
+      ["Trade property held for years \u2014 which value?", "Use <strong>current market value</strong>, subtype <strong>trade</strong>, hawl from purchase. Bought \u20b91L, now \u20b97L \u2192 enter <strong>\u20b97L</strong>; Zakat \u2248 2.5% of \u20b97L if above nisab \u2014 not 2.5% of \u201cprofit\u201d only."],
+      ["What is hawl and when do I set \u201cHawl start\u201d?", "~<strong>354 lunar days</strong> of owning zakatable wealth. Set <strong>Hawl start</strong> when you received or bought the asset. Wealth still in hawl is excluded until the year completes."],
+      ["When should I calculate and pay Zakat?", "Many families use <strong>Ramadan</strong>. This app\u2019s baseline is the <strong>first Friday of Ramadan</strong> (Umm al-Qura); the header shows today and that baseline."],
+      ["Is Zakat on cash or rent monthly or yearly?", "<strong>Yearly</strong> \u2014 once per lunar year, not monthly. Cash: total you still hold on your Zakat date \u00d7 2.5% if above nisab. Rent: building exempt; rent you keep \u2192 <strong>Cash</strong>."],
+      ["Is gold jewellery zakatable?", jewelryAns],
+      ["What is rikaz and how is it different from savings?", "<strong>Rikaz (\u0631\u0643\u0627\u0632)</strong> is buried treasure or wealth your scholar rules as rikaz \u2014 not salary, FD, or shares. This app: <strong>20% once</strong>, not 2.5% yearly. Use category <strong>Rikaz</strong>."],
+      ["Difference between Zakat, sadaqah, and Zakat al-Fitr?", "<strong>Zakat</strong> \u2014 fixed right on surplus wealth. <strong>Sadaqah</strong> \u2014 voluntary. <strong>Zakat al-Fitr</strong> \u2014 end of Ramadan per person; <strong>not</strong> in this calculator."],
+      ["How does the app handle loans and debts?", "Add <strong>Liabilities</strong>. With <strong>" + rules.label + "</strong>: " + debtAns + " Home loans are not auto-linked to property \u2014 ask your scholar."],
+      ["Do I pay on my salary or on what is still in the bank?", "<strong>What remains in the bank</strong> on your Zakat date. Salary already spent on living costs is not zakatable."],
+      ["What about PF, EPF, mutual funds, and shares?", "<strong>PF / EPF:</strong> category <strong>PF</strong> \u2014 statement balance, as-of date, monthly contributions, projected balance (default 8.25% p.a.). <strong>Funds / shares:</strong> <strong>Stocks</strong> with current total value."],
+      ["I missed Zakat for previous years \u2014 does the app catch up?", "The dashboard shows the <strong>current year</strong>. Use <strong>Yearly Review</strong> to record past-year balances so Analytics reflects them, and calculate any owed back-Zakat with your scholar."],
+      ["How do I record what I already paid?", "Per member \u2192 <strong>+ Payment</strong>: recipient and amount. <strong>Remaining</strong> = due \u2212 paid."],
+      ["Who can receive my Zakat?", "Qur\u2019an 9:60: poor, needy, collectors, hearts reconciled, captives, debtors, in Allah\u2019s cause, stranded travellers. Your scholar can guide eligible recipients."],
+      ["Why does Hanafi nisab differ from other calculators?", "Many calculators use gold nisab only. <strong>Hanafi</strong> often compares <strong>all combined wealth</strong> to <strong>silver nisab</strong> (lower bar). This app follows that when Hanafi is selected."],
+      ["How do I export or back up my data?", "<strong>Backup &amp; Restore</strong> tab \u2014 download an Excel backup (restorable here or on the server) or a readable report."],
+      ["Why are Analytics charts empty for cash or property?", "Set <strong>Acquired year</strong> and record balances over time in <strong>Yearly Review</strong>; metals use yearly rates."],
+      ["Can I track the whole family?", "<strong>Yes.</strong> Add multiple <strong>Family members</strong>; Zakat is computed per person and summed on the dashboard."],
+    ];
+    faqs.forEach((f) => root.appendChild(collapsible(f[0], [html("p", f[1])])));
+  }
+
+  // --- Generic field builder ---
+  function field(label, inputNode, help) {
+    const f = el("div", { class: "field" }, [el("label", { text: label }), inputNode]);
+    if (help) f.appendChild(el("div", { class: "help", text: help }));
+    return f;
+  }
+
+  // --- Init ---
+  function init() {
+    if (!global.XLSX) console.warn("SheetJS not loaded — Excel backup will be unavailable.");
+    Store.load();
+    baseline = ZK.zakatAsOf();
+    setupTabs();
+    renderBaselineMeta();
+    renderDashboard();
+    maybeAutoFetchRates();
+  }
+
+  // On load, refresh market rates from the internet (default on; opt-out per device).
+  // Silent and non-blocking: if offline or a value is implausible, stored rates stay.
+  function maybeAutoFetchRates() {
+    if (!Rates || !Store.getAutoRates()) return;
+    const current = Store.getRates();
+    Rates.fetchLiveRates(current.diamond_inr_per_carat)
+      .then((res) => {
+        const merged = Object.assign({}, current);
+        let changed = false;
+        ["gold_inr_per_gram", "silver_inr_per_gram", "platinum_inr_per_gram"].forEach((k) => {
+          if (res.rates[k] > 0) { merged[k] = res.rates[k]; changed = true; }
+        });
+        if (changed) {
+          Store.setRates(merged);
+          baseline = ZK.zakatAsOf();
+          renderBaselineMeta();
+          refreshAll();
+          toast("Market rates updated from the internet", "ok");
+        }
+      })
+      .catch(() => { /* offline or blocked — keep stored rates silently */ })
+      .finally(() => { maybeAutoFetchYearly(); });
+  }
+
+  // On load, also refresh per-year historical rates (default on; same toggle).
+  // Never overwrites years you've manually overridden; silent if offline.
+  function maybeAutoFetchYearly() {
+    if (!History || !Store.getAutoRates()) return;
+    const cy = ZK.todayUTC().getUTCFullYear();
+    const starts = [];
+    Store.members().forEach((m) => (m.assets || []).forEach((a) => { const ay = effectiveAcquiredYear(a); if (ay) starts.push(ay); }));
+    let startYear = starts.length ? Math.min.apply(null, starts) : cy - 5;
+    if (cy - startYear > 20) startYear = cy - 20;
+    if (startYear > cy) startYear = cy;
+    History.fetchHistoricalRates(startYear, cy, Store.getRates())
+      .then((res) => {
+        const existing = {};
+        Store.yearlyRates().forEach((r) => { existing[r.year] = r; });
+        let n = 0;
+        Object.keys(res.ratesByYear).forEach((y) => {
+          const yr = parseInt(y, 10);
+          if (existing[yr] && existing[yr].is_user_override) return; // keep manual overrides
+          Store.setYearlyRate(yr, res.ratesByYear[y], { is_estimated: true, is_user_override: false, rate_source: "internet" });
+          n++;
+        });
+        if (n) {
+          const active = document.querySelector(".tab-btn.active");
+          const tab = active ? active.dataset.tab : "dashboard";
+          if (tab === "rates" || tab === "analytics") renderTab(tab);
+        }
+      })
+      .catch(() => { /* offline or blocked — keep stored yearly rates silently */ });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})(window);

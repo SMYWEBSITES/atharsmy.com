@@ -127,6 +127,42 @@ a:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.nav-toggle {
+  display: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.nav-toggle span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: #fff;
+  transition: transform 0.3s var(--ease), opacity 0.3s var(--ease);
+}
+
+body.nav-open .nav-toggle span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+body.nav-open .nav-toggle span:nth-child(2) {
+  opacity: 0;
+}
+
+body.nav-open .nav-toggle span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
 /* Hero */
 .splash {
   position: relative;
@@ -840,9 +876,69 @@ body.page-enter {
     max-width: 420px;
     margin-inline: auto;
   }
+
+  .heritage-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
+  :root {
+    --header-h: 68px;
+  }
+
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+  #site-nav {
+    position: fixed;
+    inset: var(--header-h) 0 auto 0;
+    background: rgba(12, 31, 31, 0.97);
+    backdrop-filter: blur(16px);
+    padding: 0.75rem 1rem 1.25rem;
+    transform: translateY(-8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s var(--ease), transform 0.3s var(--ease);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+  }
+
+  body.nav-open #site-nav {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .topnav {
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .topnav a {
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+  }
+
+  .splash {
+    padding-top: calc(var(--header-h) + 2rem);
+  }
+
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn {
+    width: 100%;
+  }
+
+  .footer-links {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
   .heritage-grid {
     gap: 0.65rem;
   }

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#064e3b" />
+  <meta name="description" content="Household Zakat Calculator — offline-first zakat calculation for the Athar family." />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.gold-api.com https://api.frankfurter.dev https://open.er-api.com https://freegoldapi.com; frame-src 'none'" />
+  <title>Zakat Calculator | S M Y ATHAR</title>
+  <link rel="icon" href="assets/logo.png" type="image/png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="site-bar">
+      <a class="site-link" href="../index.html">&larr; S M Y Athar</a>
+    </div>
+    <div class="app-header-inner">
+      <div class="brand">
+        <img class="brand-logo" src="assets/logo.png" alt="Zakat logo" width="56" height="56" />
+        <div>
+          <h1>Household Zakat Calculator</h1>
+        </div>
+      </div>
+      <div class="header-meta" id="baseline-meta"></div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="analytics">Analytics</button>
+      <button class="tab-btn" data-tab="yearly">Yearly Review</button>
+      <button class="tab-btn" data-tab="rates">Market Rates</button>
+      <button class="tab-btn" data-tab="backup">Backup &amp; Restore</button>
+      <button class="tab-btn" data-tab="guide">About</button>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section id="tab-dashboard" class="tab-panel"></section>
+    <section id="tab-analytics" class="tab-panel hidden"></section>
+    <section id="tab-yearly" class="tab-panel hidden"></section>
+    <section id="tab-rates" class="tab-panel hidden"></section>
+    <section id="tab-backup" class="tab-panel hidden"></section>
+    <section id="tab-guide" class="tab-panel hidden"></section>
+  </main>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="app/zakat.js"></script>
+  <script src="app/storage.js"></script>
+  <script src="app/excel.js"></script>
+  <script src="app/rates.js"></script>
+  <script src="app/rates_history.js"></script>
+  <script src="app/ui.js"></script>
+</body>
+</html>

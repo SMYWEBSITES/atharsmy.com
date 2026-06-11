@@ -10,13 +10,42 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener("scroll", onScroll, { passive: true });
   }
 
-  var current = window.location.pathname.split("/").pop() || "index.html";
+  var path = window.location.pathname;
+  var current = path.split("/").pop() || "index.html";
   document.querySelectorAll(".topnav a, .footer-links a").forEach(function (link) {
     var href = link.getAttribute("href");
-    if (href === current || (current === "" && href === "index.html")) {
+    var isActive =
+      href === current ||
+      (current === "" && href === "index.html") ||
+      (href === "zakaat/" && path.indexOf("/zakaat") !== -1);
+    if (isActive) {
       link.classList.add("active");
     }
   });
+
+  var navToggle = document.querySelector(".nav-toggle");
+  var siteNav = document.getElementById("site-nav");
+  if (navToggle && siteNav) {
+    navToggle.addEventListener("click", function () {
+      var open = document.body.classList.toggle("nav-open");
+      navToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      navToggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    });
+    siteNav.querySelectorAll("a").forEach(function (link) {
+      link.addEventListener("click", function () {
+        document.body.classList.remove("nav-open");
+        navToggle.setAttribute("aria-expanded", "false");
+        navToggle.setAttribute("aria-label", "Open menu");
+      });
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        document.body.classList.remove("nav-open");
+        navToggle.setAttribute("aria-expanded", "false");
+        navToggle.setAttribute("aria-label", "Open menu");
+      }
+    });
+  }
 
   if ("IntersectionObserver" in window) {
     var observer = new IntersectionObserver(
