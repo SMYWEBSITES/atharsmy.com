@@ -147,6 +147,42 @@
     );
   }
 
+  function siteHost() {
+    return location.hostname || "atharsmy.com";
+  }
+
+  function isPopupLikelyBlocked() {
+    try {
+      const w = window.open("about:blank", "_blank", "noopener,noreferrer,width=1,height=1");
+      if (!w || w.closed || typeof w.closed === "undefined") return true;
+      w.close();
+      return false;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function isPopupBlockedError(err) {
+    const text = String((err && err.message) || err || "").toLowerCase();
+    return /popup|pop-up|popup_timeout|failed_to_open|popup_closed|window\.open/i.test(text);
+  }
+
+  function popupBlockedHelpHtml() {
+    const site = siteHost();
+    return (
+      "<p><strong>Google sign-in needs a small pop-up window.</strong> If nothing appeared, allow pop-ups for <code>" + site + "</code>:</p>" +
+      "<ul class=\"popup-help-list\">" +
+      "<li><strong>Chrome / Edge:</strong> Click the icon left of the address bar → <em>Pop-ups and redirects</em> → <strong>Allow</strong>. " +
+      "Or Settings → Privacy → Pop-ups → add <code>" + site + "</code>.</li>" +
+      "<li><strong>Safari (Mac):</strong> Safari → Settings → Websites → Pop-up Windows → <code>" + site + "</code> → <strong>Allow</strong>.</li>" +
+      "<li><strong>Safari (iPhone/iPad):</strong> Settings → Safari → turn off <em>Block Pop-ups</em>, or tap <strong>Allow</strong> when Safari asks for this site.</li>" +
+      "<li><strong>Firefox:</strong> Click the permissions icon in the address bar → allow <em>Pop-ups</em> for this site.</li>" +
+      "</ul>" +
+      "<p class=\"help\">Pause ad blockers for this site, reload the page, then try <strong>Connect</strong> again. " +
+      "Until sign-in works, use <strong>Download backup</strong> or open an <strong>Excel file from this device</strong> instead.</p>"
+    );
+  }
+
   function rejectOAuthError(reject, err, resp) {
     const raw =
       (err && (err.message || err.type || err.error)) ||
@@ -163,6 +199,10 @@
         "In Google Cloud Console → OAuth consent screen → Test users, add your Gmail address " +
         "(e.g. smy.altamash@gmail.com), save, wait a minute, then Connect again."
       ));
+      return;
+    }
+    if (isPopupBlockedError(text)) {
+      reject(new Error("popup_blocked: Allow pop-ups for " + siteHost() + " and try Connect again."));
       return;
     }
     reject(new Error(text));
@@ -203,6 +243,26 @@
     pendingConnect = loadGis().then(
       () =>
         new Promise((resolve, reject) => {
+          let settled = false;
+          function finish(fn, value) {
+            if (settled) return;
+            settled = true;
+            if (popupTimer) clearTimeout(popupTimer);
+            fn(value);
+          }
+
+          const popupTimer = opts.interactive
+            ? setTimeout(() => {
+                finish(
+                  reject,
+                  new Error(
+                    "popup_timeout: Google sign-in pop-up did not appear. " +
+                    "Your browser may be blocking pop-ups for " + siteHost() + "."
+                  )
+                );
+              }, 45000)
+            : null;
+
           try {
             if (!tokenClient) {
               tokenClient = global.google.accounts.oauth2.initTokenClient({
@@ -213,19 +273,19 @@
                     accessToken = resp.access_token;
                     tokenExpiry = Date.now() + (Number(resp.expires_in || 3600) * 1000);
                     if (opts.interactive) setDriveEnabled(true);
-                    resolve(resp);
+                    finish(resolve, resp);
                   } else {
-                    rejectOAuthError(reject, null, resp);
+                    rejectOAuthError((err) => finish(reject, err), null, resp);
                   }
                 },
                 error_callback: (err) => {
-                  rejectOAuthError(reject, err, null);
+                  rejectOAuthError((err) => finish(reject, err), err, null);
                 },
               });
             }
             tokenClient.requestAccessToken({ prompt: opts.interactive ? "consent" : "" });
           } catch (e) {
-            reject(e);
+            finish(reject, e);
           }
         })
     ).finally(() => {
@@ -521,6 +581,9 @@
     folderPathLabel,
     getPageOrigin,
     originMismatchHelp,
+    isPopupLikelyBlocked,
+    isPopupBlockedError,
+    popupBlockedHelpHtml,
     getAutoSync,
     setAutoSync,
     getDriveEnabled,

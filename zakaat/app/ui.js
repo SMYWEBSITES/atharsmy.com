@@ -67,6 +67,47 @@
     return Store.members().length > 0;
   }
 
+  function drivePopupHelpPanel(open) {
+    const details = el("details", { class: "setup-details popup-help" });
+    if (open) details.open = true;
+    details.appendChild(el("summary", { text: "Pop-up blocked? Enable Google Drive sign-in" }));
+    details.appendChild(el("div", {
+      class: "setup-body",
+      html: Drive ? Drive.popupBlockedHelpHtml() : "Allow pop-ups for this site and try again.",
+    }));
+    return details;
+  }
+
+  function revealDrivePopupHelp(host, open) {
+    if (!host) return;
+    let panel = host.querySelector(".popup-help");
+    if (!panel) {
+      panel = drivePopupHelpPanel(!!open);
+      host.appendChild(panel);
+    } else if (open) {
+      panel.open = true;
+    }
+    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function connectDriveInteractive(opts) {
+    opts = opts || {};
+    if (!Drive) return Promise.reject(new Error("Drive module not loaded."));
+    if (Drive.isPopupLikelyBlocked()) {
+      revealDrivePopupHelp(opts.helpHost, true);
+      toast("Allow pop-ups for this site, then try Connect again", "warn");
+    }
+    return Drive.connect({ interactive: true })
+      .then(opts.onSuccess)
+      .catch((e) => {
+        if (Drive.isPopupBlockedError(e)) {
+          revealDrivePopupHelp(opts.helpHost, true);
+          toast("Pop-up blocked — see steps below to enable Google Drive backup", "warn");
+        }
+        throw e;
+      });
+  }
+
   function importBackupFile(file, done) {
     if (!file) { toast("Choose a backup file first", "err"); return; }
     Excel.importBackupFromFile(file)
@@ -131,11 +172,16 @@
         });
     }
 
+    const replaceHelpHost = el("div", { class: "drive-help-host" });
+    replaceHelpHost.appendChild(drivePopupHelpPanel(false));
+
     signInBtn.addEventListener("click", () => {
       signInBtn.disabled = true;
-      Drive.connect({ interactive: true })
-        .then(() => { signInBtn.style.display = "none"; return loadList(); })
-        .catch((e) => toast(e.message || String(e), "err"))
+      connectDriveInteractive({
+        helpHost: replaceHelpHost,
+        onSuccess: () => { signInBtn.style.display = "none"; return loadList(); },
+      })
+        .catch((e) => { if (!Drive.isPopupBlockedError(e)) toast(e.message || String(e), "err"); })
         .finally(() => { signInBtn.disabled = false; });
     });
 
@@ -168,6 +214,7 @@
       status,
       signInBtn,
       field("Backup file", driveSelect, Drive.folderPathLabel()),
+      replaceHelpHost,
     ]);
     openModal("Replace from Google Drive", body, [cancelBtn, replaceBtn]);
 
@@ -1584,6 +1631,7 @@
     driveSelect.disabled = true;
     const driveSignInBtn = el("button", { class: "btn block", text: "Sign in with Google" });
     const driveOpenBtn = el("button", { class: "btn block", text: "Open selected backup", disabled: "disabled" });
+    const welcomeDriveHelp = el("div", { class: "drive-help-host" });
 
     function loadDriveBackups() {
       if (!Drive) return Promise.resolve();
@@ -1621,9 +1669,11 @@
       if (!Drive) { toast("Drive module not loaded", "err"); return; }
       driveSignInBtn.disabled = true;
       driveSignInBtn.textContent = "Signing in\u2026";
-      Drive.connect({ interactive: true })
-        .then(() => loadDriveBackups())
-        .catch((e) => toast(e.message || String(e), "err"))
+      connectDriveInteractive({
+        helpHost: welcomeDriveHelp,
+        onSuccess: () => loadDriveBackups(),
+      })
+        .catch((e) => { if (!Drive.isPopupBlockedError(e)) toast(e.message || String(e), "err"); })
         .finally(() => {
           driveSignInBtn.disabled = false;
           driveSignInBtn.textContent = "Sign in with Google";
@@ -1681,6 +1731,9 @@
         actionPanel.appendChild(driveSignInBtn);
         actionPanel.appendChild(field("Backup file", driveSelect));
         actionPanel.appendChild(driveOpenBtn);
+        welcomeDriveHelp.innerHTML = "";
+        welcomeDriveHelp.appendChild(drivePopupHelpPanel(false));
+        actionPanel.appendChild(welcomeDriveHelp);
       } else if (selected === "fresh") {
         actionPanel.appendChild(el("p", { class: "help", text: "You can add members on the Dashboard and back up anytime from the Backup tab." }));
         actionPanel.appendChild(el("button", {
@@ -1789,6 +1842,9 @@
 
     panel.appendChild(status);
 
+    const driveHelpHost = el("div", { class: "drive-help-host" });
+    driveHelpHost.appendChild(drivePopupHelpPanel(false));
+
     const connectBtn = el("button", { class: "btn block", text: "Connect Google Drive" });
     const backupBtn = el("button", { class: "btn secondary", text: "Upload now" });
     const disconnectBtn = el("button", { class: "btn-ghost danger-text", text: "Disconnect" });
@@ -1815,9 +1871,13 @@
 
     connectBtn.addEventListener("click", () =>
       busy(connectBtn, "Connecting\u2026", () =>
-        Drive.connect({ interactive: true })
-          .then(() => Drive.maybeSyncMonthRollover().catch(() => false))
-          .then(() => toast("Connected to Google Drive", "ok"))
+        connectDriveInteractive({
+          helpHost: driveHelpHost,
+          onSuccess: () =>
+            Drive.maybeSyncMonthRollover().catch(() => false).then(() => toast("Connected to Google Drive", "ok")),
+        }).catch((e) => {
+          if (!Drive.isPopupBlockedError(e)) throw e;
+        })
       )
     );
     backupBtn.addEventListener("click", () =>
@@ -1832,6 +1892,7 @@
     toolbar.appendChild(el("div", { class: "btn-grid" }, [backupBtn]));
     toolbar.appendChild(el("div", { class: "action-bar" }, [disconnectBtn]));
     panel.appendChild(toolbar);
+    panel.appendChild(driveHelpHost);
 
     const autoWrap = el("div", { class: "subpanel" });
     const autoChk = el("input", { type: "checkbox" });
