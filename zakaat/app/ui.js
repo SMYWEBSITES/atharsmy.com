@@ -93,16 +93,12 @@
   function connectDriveInteractive(opts) {
     opts = opts || {};
     if (!Drive) return Promise.reject(new Error("Drive module not loaded."));
-    if (Drive.isPopupLikelyBlocked()) {
-      revealDrivePopupHelp(opts.helpHost, true);
-      toast("Allow pop-ups for this site, then try Connect again", "warn");
-    }
     return Drive.connect({ interactive: true })
       .then(opts.onSuccess)
       .catch((e) => {
         if (Drive.isPopupBlockedError(e)) {
           revealDrivePopupHelp(opts.helpHost, true);
-          toast("Pop-up blocked — see steps below to enable Google Drive backup", "warn");
+          toast("Sign-in did not finish — see steps below (close any blank tab first)", "warn");
         }
         throw e;
       });

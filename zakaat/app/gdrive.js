@@ -152,25 +152,19 @@
   }
 
   function isPopupLikelyBlocked() {
-    try {
-      const w = window.open("about:blank", "_blank", "noopener,noreferrer,width=1,height=1");
-      if (!w || w.closed || typeof w.closed === "undefined") return true;
-      w.close();
-      return false;
-    } catch (e) {
-      return true;
-    }
+    // Do not window.open() here — that about:blank tab is often the "blank page" users see.
+    return false;
   }
 
   function isPopupBlockedError(err) {
     const text = String((err && err.message) || err || "").toLowerCase();
-    return /popup|pop-up|popup_timeout|failed_to_open|popup_closed|window\.open/i.test(text);
+    return /popup|pop-up|popup_timeout|popup_closed|failed_to_open|blank|window\.open|window closed/i.test(text);
   }
 
   function popupBlockedHelpHtml() {
     const site = siteHost();
     return (
-      "<p><strong>Google sign-in needs a small pop-up window.</strong> If nothing appeared, allow pop-ups for <code>" + site + "</code>:</p>" +
+      "<p><strong>Google sign-in opens a pop-up (not a blank tab).</strong> If you only see an empty white window, close it, allow pop-ups for <code>" + site + "</code>, then try again:</p>" +
       "<ul class=\"popup-help-list\">" +
       "<li><strong>Chrome / Edge:</strong> Click the icon left of the address bar → <em>Pop-ups and redirects</em> → <strong>Allow</strong>. " +
       "Or Settings → Privacy → Pop-ups → add <code>" + site + "</code>.</li>" +
@@ -198,6 +192,13 @@
         "Google sign-in blocked: this OAuth app is in Testing mode. " +
         "In Google Cloud Console → OAuth consent screen → Test users, add your Gmail address " +
         "(e.g. smy.altamash@gmail.com), save, wait a minute, then Connect again."
+      ));
+      return;
+    }
+    if (/popup_closed|window closed/i.test(text)) {
+      reject(new Error(
+        "popup_closed: Google sign-in closed before finishing. Close any blank tab, allow pop-ups for " +
+        siteHost() + ", then try Connect again."
       ));
       return;
     }
@@ -240,6 +241,11 @@
     const clientId = getClientId();
     if (!clientId) return Promise.reject(new Error("Set your Google OAuth Client ID first."));
 
+    // Fresh token client per interactive sign-in — reusing one leaves stale callbacks (blank pop-up, no response).
+    if (opts.interactive) {
+      tokenClient = null;
+    }
+
     pendingConnect = loadGis().then(
       () =>
         new Promise((resolve, reject) => {
@@ -256,34 +262,32 @@
                 finish(
                   reject,
                   new Error(
-                    "popup_timeout: Google sign-in pop-up did not appear. " +
-                    "Your browser may be blocking pop-ups for " + siteHost() + "."
+                    "popup_timeout: Google sign-in did not complete. Close any blank tab, allow pop-ups for " +
+                    siteHost() + ", disable ad blockers, then try Connect again."
                   )
                 );
-              }, 45000)
+              }, 30000)
             : null;
 
           try {
-            if (!tokenClient) {
-              tokenClient = global.google.accounts.oauth2.initTokenClient({
-                client_id: clientId,
-                scope: SCOPE,
-                callback: (resp) => {
-                  if (resp && resp.access_token) {
-                    accessToken = resp.access_token;
-                    tokenExpiry = Date.now() + (Number(resp.expires_in || 3600) * 1000);
-                    if (opts.interactive) setDriveEnabled(true);
-                    finish(resolve, resp);
-                  } else {
-                    rejectOAuthError((err) => finish(reject, err), null, resp);
-                  }
-                },
-                error_callback: (err) => {
-                  rejectOAuthError((err) => finish(reject, err), err, null);
-                },
-              });
-            }
-            tokenClient.requestAccessToken({ prompt: opts.interactive ? "consent" : "" });
+            tokenClient = global.google.accounts.oauth2.initTokenClient({
+              client_id: clientId,
+              scope: SCOPE,
+              callback: (resp) => {
+                if (resp && resp.access_token) {
+                  accessToken = resp.access_token;
+                  tokenExpiry = Date.now() + (Number(resp.expires_in || 3600) * 1000);
+                  if (opts.interactive) setDriveEnabled(true);
+                  finish(resolve, resp);
+                } else {
+                  rejectOAuthError((err) => finish(reject, err), null, resp);
+                }
+              },
+              error_callback: (err) => {
+                rejectOAuthError((err) => finish(reject, err), err, null);
+              },
+            });
+            tokenClient.requestAccessToken({ prompt: opts.interactive ? "select_account" : "" });
           } catch (e) {
             finish(reject, e);
           }
