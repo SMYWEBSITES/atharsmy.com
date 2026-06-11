@@ -90,9 +90,30 @@
     panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
+  function resetDriveConnectButtons() {
+    document.querySelectorAll("[data-drive-connect]").forEach((btn) => {
+      btn.disabled = false;
+      if (Drive && Drive.isConnected()) {
+        if (btn.dataset.connectLabel === "Connect Google Drive") {
+          btn.textContent = "Connected \u2014 tap to reconnect";
+        }
+        return;
+      }
+      if (btn.dataset.connectLabel) btn.textContent = btn.dataset.connectLabel;
+    });
+  }
+
+  function markDriveConnectButton(btn, busyLabel) {
+    if (!btn.dataset.connectLabel) btn.dataset.connectLabel = btn.textContent;
+    btn.dataset.driveConnect = "1";
+    btn.disabled = true;
+    btn.textContent = busyLabel;
+  }
+
   function connectDriveInteractive(opts) {
     opts = opts || {};
     if (!Drive) return Promise.reject(new Error("Drive module not loaded."));
+    if (opts.button) markDriveConnectButton(opts.button, opts.busyLabel || "Connecting\u2026");
     return Drive.connect({ interactive: true })
       .then(opts.onSuccess)
       .catch((e) => {
@@ -101,7 +122,29 @@
           toast("Sign-in did not finish — see steps below (close any blank tab first)", "warn");
         }
         throw e;
+      })
+      .finally(() => resetDriveConnectButtons());
+  }
+
+  function setupDriveConnectResume() {
+    if (!Drive) return;
+    Drive.onConnectChange((connected) => {
+      resetDriveConnectButtons();
+      if (connected) {
+        document.dispatchEvent(new CustomEvent("zk-drive-connected"));
+      }
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return;
+      Drive.resumeAfterOAuthTab().then((ok) => {
+        if (ok) resetDriveConnectButtons();
       });
+    });
+    window.addEventListener("focus", () => {
+      Drive.resumeAfterOAuthTab().then((ok) => {
+        if (ok) resetDriveConnectButtons();
+      });
+    });
   }
 
   function importBackupFile(file, done) {
@@ -172,13 +215,13 @@
     replaceHelpHost.appendChild(drivePopupHelpPanel(false));
 
     signInBtn.addEventListener("click", () => {
-      signInBtn.disabled = true;
       connectDriveInteractive({
+        button: signInBtn,
+        busyLabel: "Signing in\u2026",
         helpHost: replaceHelpHost,
         onSuccess: () => { signInBtn.style.display = "none"; return loadList(); },
       })
-        .catch((e) => { if (!Drive.isPopupBlockedError(e)) toast(e.message || String(e), "err"); })
-        .finally(() => { signInBtn.disabled = false; });
+        .catch((e) => { if (!Drive.isPopupBlockedError(e)) toast(e.message || String(e), "err"); });
     });
 
     const replaceBtn = el("button", {
@@ -1663,19 +1706,20 @@
 
     driveSignInBtn.addEventListener("click", () => {
       if (!Drive) { toast("Drive module not loaded", "err"); return; }
-      driveSignInBtn.disabled = true;
-      driveSignInBtn.textContent = "Signing in\u2026";
       connectDriveInteractive({
+        button: driveSignInBtn,
+        busyLabel: "Signing in\u2026",
         helpHost: welcomeDriveHelp,
-        onSuccess: () => loadDriveBackups(),
+        onSuccess: () => {
+          driveSignInBtn.style.display = "none";
+          return loadDriveBackups();
+        },
       })
-        .catch((e) => { if (!Drive.isPopupBlockedError(e)) toast(e.message || String(e), "err"); })
-        .finally(() => {
-          driveSignInBtn.disabled = false;
-          driveSignInBtn.textContent = "Sign in with Google";
-          driveSignInBtn.style.display = Drive.isConnected() ? "none" : "";
-        });
+        .catch((e) => { if (!Drive.isPopupBlockedError(e)) toast(e.message || String(e), "err"); });
     });
+    document.addEventListener("zk-drive-connected", () => {
+      if (Drive && Drive.isConnected()) driveSignInBtn.style.display = "none";
+    }, { once: false });
 
     driveOpenBtn.addEventListener("click", () => {
       const fileName = driveSelect.value;
@@ -1859,6 +1903,7 @@
         .then(fn)
         .catch((e) => toast(e.message || String(e), "err"))
         .finally(() => {
+          btn.disabled = false;
           btn.textContent = prev;
           setStatus();
           refreshButtons();
@@ -1866,15 +1911,19 @@
     }
 
     connectBtn.addEventListener("click", () =>
-      busy(connectBtn, "Connecting\u2026", () =>
-        connectDriveInteractive({
-          helpHost: driveHelpHost,
-          onSuccess: () =>
-            Drive.maybeSyncMonthRollover().catch(() => false).then(() => toast("Connected to Google Drive", "ok")),
-        }).catch((e) => {
-          if (!Drive.isPopupBlockedError(e)) throw e;
-        })
-      )
+      connectDriveInteractive({
+        button: connectBtn,
+        busyLabel: "Connecting\u2026",
+        helpHost: driveHelpHost,
+        onSuccess: () =>
+          Drive.maybeSyncMonthRollover().catch(() => false).then(() => {
+            setStatus();
+            refreshButtons();
+            toast("Connected to Google Drive", "ok");
+          }),
+      }).catch((e) => {
+        if (!Drive.isPopupBlockedError(e)) toast(e.message || String(e), "err");
+      })
     );
     backupBtn.addEventListener("click", () =>
       busy(backupBtn, "Uploading\u2026", () =>
@@ -2137,6 +2186,7 @@
     if (Drive) {
       Drive.setStatusCallback((kind, msg) => toast(msg, kind));
       Store.onSave(() => Drive.scheduleAutoBackup());
+      setupDriveConnectResume();
     }
 
     if (hasHouseholdData()) {

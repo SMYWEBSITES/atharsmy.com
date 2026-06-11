@@ -28,6 +28,8 @@
   let autoTimer = null;
   let statusCb = null;
   let pendingConnect = null;
+  let activeConnect = null;
+  const connectListeners = [];
 
   function loadCfg() {
     try {
@@ -117,6 +119,25 @@
 
   function notify(kind, message) {
     if (statusCb) statusCb(kind, message);
+  }
+
+  function notifyConnectChange() {
+    const connected = isConnected();
+    connectListeners.forEach((cb) => {
+      try { cb(connected); } catch (e) { /* ignore */ }
+    });
+  }
+
+  function onConnectChange(cb) {
+    if (typeof cb === "function") connectListeners.push(cb);
+  }
+
+  function abortActiveConnect(reason) {
+    if (!activeConnect || activeConnect.settled) return;
+    activeConnect.finish(
+      activeConnect.reject,
+      new Error(reason || "Connect cancelled")
+    );
   }
 
   function isConfigured() {
@@ -235,13 +256,22 @@
 
   function connect(opts) {
     opts = opts || {};
-    if (isConnected()) return Promise.resolve({ access_token: accessToken });
-    if (pendingConnect) return pendingConnect;
+    if (isConnected()) {
+      notifyConnectChange();
+      return Promise.resolve({ access_token: accessToken });
+    }
+    if (opts.interactive) {
+      setDriveEnabled(true);
+      abortActiveConnect("restarted");
+    } else if (pendingConnect && !opts.resume) {
+      return pendingConnect;
+    } else if (pendingConnect && opts.resume) {
+      abortActiveConnect("resume");
+    }
 
     const clientId = getClientId();
     if (!clientId) return Promise.reject(new Error("Set your Google OAuth Client ID first."));
 
-    // Fresh token client per interactive sign-in — reusing one leaves stale callbacks (blank pop-up, no response).
     if (opts.interactive) {
       tokenClient = null;
     }
@@ -253,9 +283,12 @@
           function finish(fn, value) {
             if (settled) return;
             settled = true;
+            if (activeConnect) activeConnect.settled = true;
             if (popupTimer) clearTimeout(popupTimer);
             fn(value);
           }
+
+          activeConnect = { finish: finish, reject: reject, resolve: resolve, settled: false, opts: opts };
 
           const popupTimer = opts.interactive
             ? setTimeout(() => {
@@ -279,6 +312,7 @@
                   tokenExpiry = Date.now() + (Number(resp.expires_in || 3600) * 1000);
                   if (opts.interactive) setDriveEnabled(true);
                   finish(resolve, resp);
+                  notifyConnectChange();
                 } else {
                   rejectOAuthError((err) => finish(reject, err), null, resp);
                 }
@@ -294,8 +328,39 @@
         })
     ).finally(() => {
       pendingConnect = null;
+      activeConnect = null;
     });
     return pendingConnect;
+  }
+
+  // OAuth may finish in Google's pop-up/tab without notifying this page — retry silently when user returns.
+  function resumeAfterOAuthTab() {
+    if (isConnected()) {
+      notifyConnectChange();
+      return Promise.resolve(true);
+    }
+    if (!pendingConnect && !activeConnect) return Promise.resolve(false);
+
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        if (isConnected()) {
+          notifyConnectChange();
+          resolve(true);
+          return;
+        }
+        if (!pendingConnect && !activeConnect) {
+          resolve(false);
+          return;
+        }
+        abortActiveConnect("resume");
+        connect({ interactive: false, resume: true })
+          .then(() => {
+            notifyConnectChange();
+            resolve(isConnected());
+          })
+          .catch(() => resolve(false));
+      }, 700);
+    });
   }
 
   function disconnect() {
@@ -311,12 +376,13 @@
     }
   }
 
-  function ensureToken() {
+  function ensureToken(opts) {
+    opts = opts || {};
     if (isConnected()) return Promise.resolve();
-    if (!getDriveEnabled()) {
+    if (!getDriveEnabled() && !opts.resume) {
       return Promise.reject(new Error("Sign in to Google Drive first."));
     }
-    return connect({ interactive: false });
+    return connect({ interactive: false, resume: !!opts.resume });
   }
 
   function authHeaders(extra) {
@@ -577,6 +643,8 @@
     getLastSync,
     getLastFileName,
     connect,
+    resumeAfterOAuthTab,
+    onConnectChange,
     disconnect,
     backup,
     restore,
