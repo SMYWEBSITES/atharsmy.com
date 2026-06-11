@@ -270,6 +270,31 @@
     openModal(title, body, [no, yes]);
   }
 
+  // --- Analytics (GA4 virtual page views for in-app tabs) ---
+  const TAB_PAGE_TITLES = {
+    dashboard: "Dashboard",
+    analytics: "Analytics",
+    yearly: "Yearly Review",
+    rates: "Market Rates",
+    backup: "Backup",
+    guide: "About",
+  };
+
+  function trackTabView(tab) {
+    const host = location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") return;
+    if (typeof global.gtag !== "function") return;
+    const section = TAB_PAGE_TITLES[tab] || tab;
+    const title = "Zakat Calculator — " + section;
+    const path = "/zakaat/" + tab;
+    document.title = title + " | S M Y ATHAR";
+    global.gtag("event", "page_view", {
+      page_title: title,
+      page_location: location.origin + path,
+      page_path: path,
+    });
+  }
+
   // --- Tabs ---
   function setupTabs() {
     document.getElementById("tabs").addEventListener("click", (e) => {
@@ -280,6 +305,7 @@
       document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
       document.getElementById("tab-" + tab).classList.remove("hidden");
       renderTab(tab);
+      trackTabView(tab);
     });
   }
 
@@ -2176,6 +2202,7 @@
     setupTabs();
     renderBaselineMeta();
     renderDashboard();
+    trackTabView("dashboard");
     if (opts.fetchRates !== false) maybeAutoFetchRates();
   }
 
