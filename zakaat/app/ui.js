@@ -154,7 +154,7 @@
     if (!file) { toast("Choose a backup file first", "err"); return; }
     Excel.importBackupFromFile(file)
       .then((counts) => {
-        trackEvent("data_import", { source: "excel", members: counts.members, assets: counts.assets });
+        trackEvent("data_import", { source: "excel", member_count: counts.members, asset_count: counts.assets });
         closeModal();
         if (typeof done === "function") done();
         refreshAll();
@@ -240,7 +240,7 @@
           () => {
             Drive.restore(fileName)
               .then((res) => {
-                trackEvent("data_import", { source: "drive_replace", file: res.fileName, members: res.counts.members });
+                trackEvent("data_import", { source: "drive_replace", member_count: res.counts.members });
                 closeModal();
                 refreshAll();
                 toast("Replaced with " + res.counts.members + " member(s) from " + res.fileName, "ok");
@@ -1759,7 +1759,7 @@
       driveOpenBtn.disabled = true;
       Drive.restore(fileName)
         .then((res) => {
-          trackEvent("data_import", { source: "drive", file: res.fileName, members: res.counts.members });
+          trackEvent("data_import", { source: "drive", member_count: res.counts.members });
           closeModal();
           if (typeof onDone === "function") onDone();
           refreshAll();
@@ -1966,7 +1966,7 @@
     backupBtn.addEventListener("click", () =>
       busy(backupBtn, "Uploading\u2026", () =>
         Drive.backup().then((res) => {
-          trackEvent("backup_export", { type: "drive", file: res.fileName });
+          trackEvent("backup_export", { type: "drive" });
           toast("Backed up to " + res.path, "ok");
         })
       )

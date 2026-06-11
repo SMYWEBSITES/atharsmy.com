@@ -1,11 +1,13 @@
 /*
  * Shared GA4 helpers for atharsmy.com (Profile Site + Zakat Calculator).
+ * Privacy: no personal information is sent except the public family name "Athar".
  * Requires gtag bootstrap in each HTML page (async gtag.js + dataLayer).
  */
 (function (global) {
   "use strict";
 
   var ID = global.GA_ID || "G-3DFSY795RJ";
+  var FAMILY_NAME = "Athar";
 
   var PATH_ALIASES = {
     "": "/",
@@ -40,34 +42,88 @@
     return PATH_ALIASES[file] || PATH_ALIASES[path] || path;
   }
 
+  function anonymizedTitle(path) {
+    path = path || normalizePath();
+    if (path === "/") return "Home";
+    if (path === "/family-history") return "Family History";
+    if (path === "/privacy") return "Privacy Policy";
+    if (path.indexOf("/zakaat/") === 0) {
+      var tab = path.replace("/zakaat/", "").replace(/\/$/, "") || "dashboard";
+      var labels = {
+        dashboard: "Dashboard",
+        analytics: "Analytics",
+        yearly: "Yearly Review",
+        rates: "Market Rates",
+        backup: "Backup",
+        guide: "About",
+      };
+      return "Zakat Calculator — " + (labels[tab] || tab);
+    }
+    if (path.indexOf("/zakaat") === 0) return "Zakat Calculator";
+    return "Profile Site";
+  }
+
+  function outboundDomain(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, "");
+    } catch (e) {
+      return "external";
+    }
+  }
+
+  function sanitizeParams(name, params) {
+    var clean = {};
+    var src = params || {};
+    var key;
+
+    for (key in src) {
+      if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
+      if (key === "link_text" || key === "file" || key === "link_url") continue;
+      clean[key] = src[key];
+    }
+
+    if (name === "family_name_view") {
+      clean.family_name = FAMILY_NAME;
+    }
+
+    if (name === "click" && src.link_url) {
+      clean.outbound_domain = outboundDomain(src.link_url);
+      clean.outbound = true;
+    }
+
+    if (!clean.site_section) clean.site_section = contentGroup();
+    return clean;
+  }
+
   function trackPageView(opts) {
     if (!enabled()) return;
     opts = opts || {};
     var pagePath = opts.path || normalizePath();
-    var title = opts.title || document.title;
-    global.gtag("event", "page_view", {
-      page_title: title,
+    var pageParams = sanitizeParams("page_view", {
       page_location: location.origin + pagePath,
       page_path: pagePath,
       site_section: opts.section || contentGroup(),
     });
+    pageParams.page_title = anonymizedTitle(pagePath);
+    global.gtag("event", "page_view", pageParams);
   }
 
   function trackEvent(name, params) {
     if (!enabled()) return;
-    params = params || {};
-    if (!params.site_section) params.site_section = contentGroup();
-    global.gtag("event", name, params);
+    global.gtag("event", name, sanitizeParams(name, params));
   }
 
   function initConfig() {
     if (!enabled()) return;
     var zakat = isZakatApp();
+    var pagePath = normalizePath();
     global.gtag("config", ID, {
       send_page_view: !zakat,
-      page_path: normalizePath(),
-      page_title: document.title,
+      page_path: pagePath,
+      page_title: anonymizedTitle(pagePath),
       content_group: contentGroup(),
+      allow_google_signals: false,
+      allow_ad_personalization_signals: false,
     });
   }
 
@@ -78,54 +134,57 @@
       var link = e.target.closest("a[href]");
       if (!link) return;
       var href = link.getAttribute("href") || "";
-      var text = (link.textContent || "").trim().slice(0, 80);
 
       if (href.indexOf("mailto:") === 0) {
         trackEvent("contact_click", { method: "email" });
         return;
       }
       if (href.indexOf("http") === 0 && href.indexOf(location.hostname) === -1) {
-        trackEvent("click", {
-          link_url: href,
-          link_text: text,
-          outbound: true,
-        });
+        trackEvent("click", { link_url: href });
         return;
       }
       if (href.indexOf("zakaat") !== -1) {
-        trackEvent("nav_click", { destination: "zakaat_calculator", link_text: text });
+        trackEvent("nav_click", { destination: "zakaat_calculator" });
       } else if (href.indexOf("familyHistory") !== -1) {
-        trackEvent("nav_click", { destination: "family_history", link_text: text });
+        trackEvent("nav_click", { destination: "family_history" });
       } else if (href.indexOf("privacy") !== -1) {
-        trackEvent("nav_click", { destination: "privacy", link_text: text });
+        trackEvent("nav_click", { destination: "privacy" });
       } else if (href.indexOf("index.html") !== -1 || href === "/") {
-        trackEvent("nav_click", { destination: "home", link_text: text });
+        trackEvent("nav_click", { destination: "home" });
       } else if (href.charAt(0) === "#") {
-        trackEvent("section_nav", { section_id: href.slice(1), link_text: text });
+        trackEvent("section_nav", { section_id: href.slice(1) });
+        if (href === "#family-name") {
+          trackEvent("family_name_nav", { destination: "family_name" });
+        }
       }
     });
 
     if ("IntersectionObserver" in global) {
-      var seen = {};
+      var seenSections = {};
+      var seenFamilyName = false;
       var observer = new IntersectionObserver(
         function (entries) {
           entries.forEach(function (entry) {
             if (!entry.isIntersecting) return;
             var el = entry.target;
             var id = el.id;
-            if (!id || seen[id]) return;
-            seen[id] = true;
+            if (!id || seenSections[id]) return;
+            seenSections[id] = true;
             trackEvent("section_view", {
               section_id: id,
               section_name: el.getAttribute("data-analytics-name") || id,
             });
+            if (id === "family-name" && !seenFamilyName) {
+              seenFamilyName = true;
+              trackEvent("family_name_view", { section_id: id, section_name: "Family Name" });
+            }
             observer.unobserve(el);
           });
         },
         { threshold: 0.35, rootMargin: "0px 0px -10% 0px" }
       );
       document.querySelectorAll("section[id], [data-analytics-section]").forEach(function (el) {
-        observer.observe(el);
+        if (el.id) observer.observe(el);
       });
     }
   }
@@ -141,6 +200,7 @@
     trackEvent: trackEvent,
     contentGroup: contentGroup,
     normalizePath: normalizePath,
+    anonymizedTitle: anonymizedTitle,
   };
 
   if (document.readyState === "loading") {
