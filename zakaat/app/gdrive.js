@@ -1,7 +1,7 @@
 /*
  * Google Drive backup/restore — browser-only Excel (.xlsx) sync.
  *
- * Backups are stored at: SMY_FAMILY/ZAKAAT/zakaat_<mon>_<year>.xlsx
+ * Backups are stored at: MY_FAMILY/ZAKAAT/zakaat_<mon>_<year>.xlsx
  * (e.g. zakaat_jun_2026.xlsx). Folders are created if missing.
  *
  * Uses the Athar family Google OAuth Web Client ID (Drive API enabled).
@@ -17,7 +17,7 @@
   const UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
   const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-  const FOLDER_SMY = "SMY_FAMILY";
+  const FOLDER_FAMILY = "MY_FAMILY";
   const FOLDER_ZAKAAT = "ZAKAAT";
   const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
@@ -124,7 +124,39 @@
   }
 
   function folderPathLabel() {
-    return FOLDER_SMY + "/" + FOLDER_ZAKAAT + "/";
+    return FOLDER_FAMILY + "/" + FOLDER_ZAKAAT + "/";
+  }
+
+  function getPageOrigin() {
+    return location.origin;
+  }
+
+  function originMismatchHelp() {
+    return (
+      "OAuth origin mismatch. In Google Cloud Console → APIs & Services → Credentials → " +
+      "your Web OAuth client → Authorized JavaScript origins, add exactly: " + getPageOrigin()
+    );
+  }
+
+  function rejectOAuthError(reject, err, resp) {
+    const raw =
+      (err && (err.message || err.type || err.error)) ||
+      (resp && (resp.error_description || resp.error)) ||
+      "Authorization failed";
+    const text = String(raw);
+    if (/origin_mismatch|origin/i.test(text)) {
+      reject(new Error(originMismatchHelp()));
+      return;
+    }
+    if (/access_denied|verification|test users/i.test(text)) {
+      reject(new Error(
+        "Google sign-in blocked: this OAuth app is in Testing mode. " +
+        "In Google Cloud Console → OAuth consent screen → Test users, add your Gmail address " +
+        "(e.g. smy.altamash@gmail.com), save, wait a minute, then Connect again."
+      ));
+      return;
+    }
+    reject(new Error(text));
   }
 
   function loadGis() {
@@ -170,11 +202,11 @@
                     tokenExpiry = Date.now() + (Number(resp.expires_in || 3600) * 1000);
                     resolve(resp);
                   } else {
-                    reject(new Error((resp && resp.error) || "Authorization failed"));
+                    rejectOAuthError(reject, null, resp);
                   }
                 },
                 error_callback: (err) => {
-                  reject(new Error((err && (err.message || err.type)) || "Authorization was cancelled"));
+                  rejectOAuthError(reject, err, null);
                 },
               });
             }
@@ -257,7 +289,7 @@
   }
 
   function ensureZakaatFolder() {
-    return ensureFolder("root", FOLDER_SMY).then((smyId) => ensureFolder(smyId, FOLDER_ZAKAAT));
+    return ensureFolder("root", FOLDER_FAMILY).then((familyId) => ensureFolder(familyId, FOLDER_ZAKAAT));
   }
 
   function findFileInFolder(folderId, fileName) {
@@ -465,6 +497,8 @@
     listBackups,
     backupFileName,
     folderPathLabel,
+    getPageOrigin,
+    originMismatchHelp,
     getAutoSync,
     setAutoSync,
     scheduleAutoBackup,
@@ -472,7 +506,7 @@
     prepareCurrentMonth,
     setStatusCallback,
     SCOPE,
-    FOLDER_SMY,
+    FOLDER_FAMILY,
     FOLDER_ZAKAAT,
   };
 })(window);

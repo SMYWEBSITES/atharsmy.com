@@ -823,9 +823,7 @@
     const head = el("div", { class: "panel" });
     head.appendChild(el("h2", { text: "Family members & assets" }));
     head.appendChild(el("p", { class: "sub", text: "Add each household member, then record their assets and Zakat payments." }));
-    head.appendChild(el("div", { class: "btn-row" }, [
-      el("button", { class: "btn", text: "+ Add family member", onclick: () => memberForm() }),
-    ]));
+    head.appendChild(el("button", { class: "btn", text: "Add family member", onclick: () => memberForm() }));
     panel.appendChild(head);
 
     const members = Store.members();
@@ -852,11 +850,21 @@
 
       const head = el("div", { class: "member-head" }, [
         headToggle,
-        el("div", { class: "btn-row" }, [
-          el("button", { class: "btn sm", text: "+ Asset", onclick: () => assetForm(m.id) }),
-          el("button", { class: "btn sm secondary", text: "+ Payment", onclick: () => paymentForm(m.id) }),
-          el("button", { class: "btn sm secondary", text: "Edit", onclick: () => memberForm(m) }),
-          el("button", { class: "btn sm danger", text: "Delete", onclick: () => confirmDialog("Delete member", "Delete " + m.name + " and all their assets and payments?", () => { Store.deleteMember(m.id); refreshAll(); toast("Member deleted"); }, "Delete", true) }),
+        el("div", { class: "member-actions" }, [
+          el("button", { class: "btn sm", text: "Add asset", onclick: () => assetForm(m.id) }),
+          el("button", { class: "btn sm secondary", text: "Add payment", onclick: () => paymentForm(m.id) }),
+          el("button", { class: "btn-ghost sm", text: "Edit", onclick: () => memberForm(m) }),
+          el("button", {
+            class: "btn-ghost sm danger-text",
+            text: "Delete",
+            onclick: () => confirmDialog(
+              "Delete member",
+              "Delete " + m.name + " and all their assets and payments?",
+              () => { Store.deleteMember(m.id); refreshAll(); toast("Member deleted"); },
+              "Delete",
+              true
+            ),
+          }),
         ]),
       ]);
       block.appendChild(head);
@@ -882,11 +890,10 @@
             descCell,
             el("td", { class: "muted", text: detail }),
             el("td", { class: "num", text: ZK.fmtINR(val) }),
-            el("td", { class: "num" }, [
-              el("button", { class: "link", text: "Edit", onclick: () => assetForm(m.id, a) }),
-              document.createTextNode("  "),
-              el("button", { class: "link", style: "color:#dc2626", text: "Delete", onclick: () => { Store.deleteAsset(m.id, a.id); refreshAll(); toast("Asset deleted"); } }),
-            ]),
+            el("td", { class: "num" }, el("div", { class: "table-actions" }, [
+              el("button", { class: "btn-ghost sm", text: "Edit", onclick: () => assetForm(m.id, a) }),
+              el("button", { class: "btn-ghost sm danger-text", text: "Delete", onclick: () => { Store.deleteAsset(m.id, a.id); refreshAll(); toast("Asset deleted"); } }),
+            ])),
           ]);
         });
         const thead = el("thead", null, el("tr", null, [th("Category"), th("Description"), th("Details"), th("Value", true), th("", true)]));
@@ -901,11 +908,10 @@
         const rows = m.zakat_payments.map((p) => el("tr", null, [
           el("td", { text: p.given_to }),
           el("td", { class: "num", text: ZK.fmtINR(p.amount_inr) }),
-          el("td", { class: "num" }, [
-            el("button", { class: "link", text: "Edit", onclick: () => paymentForm(m.id, p) }),
-            document.createTextNode("  "),
-            el("button", { class: "link", style: "color:#dc2626", text: "Delete", onclick: () => { Store.deletePayment(m.id, p.id); refreshAll(); toast("Payment deleted"); } }),
-          ]),
+          el("td", { class: "num" }, el("div", { class: "table-actions" }, [
+            el("button", { class: "btn-ghost sm", text: "Edit", onclick: () => paymentForm(m.id, p) }),
+            el("button", { class: "btn-ghost sm danger-text", text: "Delete", onclick: () => { Store.deletePayment(m.id, p.id); refreshAll(); toast("Payment deleted"); } }),
+          ])),
         ]));
         const thead = el("thead", null, el("tr", null, [th("Given to"), th("Amount", true), th("", true)]));
         body.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [thead, el("tbody", null, rows)]))));
@@ -1274,7 +1280,7 @@
 
     const sourceBox = el("div", { class: "rate-sources" });
 
-    const fetchBtn = el("button", { class: "btn secondary", text: "\u2193 Fetch live rates from the internet" });
+    const fetchBtn = el("button", { class: "btn secondary", text: "Fetch live rates" });
     fetchBtn.addEventListener("click", (e) => {
       e.preventDefault();
       if (!Rates) { toast("Live fetch unavailable", "err"); return; }
@@ -1336,7 +1342,7 @@
     const endIn = el("input", { type: "number", step: "1", value: now, style: "max-width:110px" });
     const histBox = el("div", { class: "rate-sources" });
 
-    const fetchBtn = el("button", { class: "btn secondary", text: "\u2193 Fetch yearly rates from the internet" });
+    const fetchBtn = el("button", { class: "btn secondary", text: "Fetch yearly rates" });
     fetchBtn.addEventListener("click", (e) => {
       e.preventDefault();
       if (!History) { toast("Historical fetch unavailable", "err"); return; }
@@ -1428,9 +1434,9 @@
     p.appendChild(el("h2", { text: "Backup & restore" }));
     p.appendChild(el("p", { class: "sub", html: "Export all your data (members, assets, asset images, payments, rates) to an Excel file. Import it to restore on this or any device \u2014 it's also compatible with the server version of this app." }));
 
-    p.appendChild(el("div", { class: "btn-row" }, [
-      el("button", { class: "btn", text: "Download full backup (.xlsx)", onclick: () => { try { Excel.exportBackup(); toast("Backup downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
-      el("button", { class: "btn secondary", text: "Download Zakat report (.xlsx)", onclick: () => { try { Excel.exportReport(); toast("Report downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
+    p.appendChild(el("div", { class: "btn-grid" }, [
+      el("button", { class: "btn", text: "Download backup", onclick: () => { try { Excel.exportBackup(); toast("Backup downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
+      el("button", { class: "btn secondary", text: "Download report", onclick: () => { try { Excel.exportReport(); toast("Report downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
     ]));
     p.appendChild(el("p", { class: "help", text: "The full backup restores everything (members, assets, images, snapshots, rates). The Zakat report is a readable per-member summary for sharing or printing." }));
 
@@ -1441,7 +1447,7 @@
     const confirmChk = el("input", { type: "checkbox" });
     importPanel.appendChild(field("Backup .xlsx file", fileInput));
     importPanel.appendChild(el("div", { class: "field" }, el("label", { class: "checkbox-field" }, [confirmChk, el("span", { text: " I understand this will overwrite my current data." })])));
-    importPanel.appendChild(el("button", { class: "btn", text: "Import backup", onclick: () => {
+    importPanel.appendChild(el("button", { class: "btn block", text: "Import backup", onclick: () => {
       if (!fileInput.files[0]) { toast("Choose a file first", "err"); return; }
       if (!confirmChk.checked) { toast("Please confirm the overwrite", "err"); return; }
       Excel.importBackupFromFile(fileInput.files[0]).then((counts) => {
@@ -1457,7 +1463,7 @@
     const danger = el("div", { class: "panel" });
     danger.appendChild(el("h2", { text: "Clear all data" }));
     danger.appendChild(el("p", { class: "sub", text: "Erase everything stored in this browser. Export a backup first if you want to keep it." }));
-    danger.appendChild(el("button", { class: "btn danger", text: "Clear all data", onclick: () => confirmDialog("Clear all data", "This permanently deletes all members, assets, payments and rates from this browser. Continue?", () => { Store.clearAll(); refreshAll(); toast("All data cleared"); }, "Clear everything", true) }));
+    danger.appendChild(el("button", { class: "btn danger block", text: "Clear all data", onclick: () => confirmDialog("Clear all data", "This permanently deletes all members, assets, payments and rates from this browser. Continue?", () => { Store.clearAll(); refreshAll(); toast("All data cleared"); }, "Clear everything", true) }));
     panel.appendChild(danger);
   }
 
@@ -1467,14 +1473,14 @@
     appendBackupContent(panel);
   }
 
-  // --- Google Drive Excel backup (SMY_FAMILY/ZAKAAT/) ---
+  // --- Google Drive Excel backup (MY_FAMILY/ZAKAAT/) ---
   function renderDrivePanel() {
     const panel = el("div", { class: "panel" });
     panel.appendChild(el("h2", { text: "Google Drive backup" }));
     panel.appendChild(el("p", {
       class: "sub",
       html: "Back up and restore the full Excel file in your Google Drive at <code>" +
-        (Drive ? Drive.folderPathLabel() : "SMY_FAMILY/ZAKAAT/") +
+        (Drive ? Drive.folderPathLabel() : "MY_FAMILY/ZAKAAT/") +
         "zakaat_&lt;mon&gt;_&lt;year&gt;.xlsx</code> (e.g. <code>zakaat_jun_2026.xlsx</code>).",
     }));
 
@@ -1483,7 +1489,16 @@
       return panel;
     }
 
-    const status = el("div", { class: "notice", text: "" });
+    panel.appendChild(el("details", { class: "setup-details" }, [
+      el("summary", { text: "One-time Google Cloud setup" }),
+      el("div", {
+        class: "setup-body",
+        html: "1. <em>Credentials</em> → Web client → <em>Authorized JavaScript origins</em>: <code>" + Drive.getPageOrigin() + "</code><br>" +
+          "2. <em>OAuth consent screen</em> → <em>Test users</em> → add each family Gmail (e.g. <code>smy.altamash@gmail.com</code>).",
+      }),
+    ]));
+
+    const status = el("div", { class: "notice compact", text: "" });
     function setStatus() {
       const last = Drive.getLastSync();
       const connected = Drive.isConnected();
@@ -1526,15 +1541,15 @@
         });
     }
 
-    const connectBtn = el("button", { class: "btn", text: "Connect Google Drive" });
-    const backupBtn = el("button", { class: "btn secondary", text: "Back up to Drive" });
-    const restoreBtn = el("button", { class: "btn secondary", text: "Restore from Drive" });
-    const disconnectBtn = el("button", { class: "btn secondary", text: "Disconnect" });
-    const refreshBtn = el("button", { class: "btn secondary sm", text: "Refresh list" });
+    const connectBtn = el("button", { class: "btn block", text: "Connect Google Drive" });
+    const backupBtn = el("button", { class: "btn secondary", text: "Upload" });
+    const restoreBtn = el("button", { class: "btn secondary", text: "Restore" });
+    const disconnectBtn = el("button", { class: "btn-ghost danger-text", text: "Disconnect" });
+    const refreshBtn = el("button", { class: "btn-ghost", text: "Refresh backup list" });
 
     function refreshButtons() {
       const connected = Drive.isConnected();
-      connectBtn.textContent = connected ? "Reconnect" : "Connect Google Drive";
+      connectBtn.textContent = connected ? "Connected — tap to reconnect" : "Connect Google Drive";
       disconnectBtn.style.display = connected ? "" : "none";
     }
 
@@ -1592,9 +1607,12 @@
       busy(refreshBtn, "Refreshing\u2026", () => loadBackupList().then(() => toast("Backup list updated", "ok")))
     );
 
-    panel.appendChild(el("div", { class: "btn-row" }, [connectBtn, backupBtn, restoreBtn, disconnectBtn]));
-    panel.appendChild(field("Restore file", restoreSelect, "Pick a monthly backup from " + Drive.folderPathLabel()));
-    panel.appendChild(el("div", { class: "btn-row" }, [refreshBtn]));
+    const toolbar = el("div", { class: "drive-toolbar" });
+    toolbar.appendChild(connectBtn);
+    toolbar.appendChild(el("div", { class: "btn-grid" }, [backupBtn, restoreBtn]));
+    toolbar.appendChild(field("Restore from", restoreSelect, "Monthly file in " + Drive.folderPathLabel()));
+    toolbar.appendChild(el("div", { class: "action-bar" }, [refreshBtn, disconnectBtn]));
+    panel.appendChild(toolbar);
 
     const autoWrap = el("div", { class: "subpanel" });
     const autoChk = el("input", { type: "checkbox" });
@@ -1787,7 +1805,7 @@
       ["How do I record what I already paid?", "Per member \u2192 <strong>+ Payment</strong>: recipient and amount. <strong>Remaining</strong> = due \u2212 paid."],
       ["Who can receive my Zakat?", "Qur\u2019an 9:60: poor, needy, collectors, hearts reconciled, captives, debtors, in Allah\u2019s cause, stranded travellers. Your scholar can guide eligible recipients."],
       ["Why does Hanafi nisab differ from other calculators?", "Many calculators use gold nisab only. <strong>Hanafi</strong> often compares <strong>all combined wealth</strong> to <strong>silver nisab</strong> (lower bar). This app follows that when Hanafi is selected."],
-      ["How do I export or back up my data?", "<strong>Backup &amp; Restore</strong> tab \u2014 download an Excel backup (restorable here or on the server), sync to Google Drive at <strong>SMY_FAMILY/ZAKAAT/zakaat_&lt;mon&gt;_&lt;year&gt;.xlsx</strong>, or download a readable report."],
+      ["How do I export or back up my data?", "<strong>Backup &amp; Restore</strong> tab \u2014 download an Excel backup (restorable here or on the server), sync to Google Drive at <strong>MY_FAMILY/ZAKAAT/zakaat_&lt;mon&gt;_&lt;year&gt;.xlsx</strong>, or download a readable report."],
       ["Why are Analytics charts empty for cash or property?", "Set <strong>Acquired year</strong> and record balances over time in <strong>Yearly Review</strong>; metals use yearly rates."],
       ["Can I track the whole family?", "<strong>Yes.</strong> Add multiple <strong>Family members</strong>; Zakat is computed per person and summed on the dashboard."],
     ];
@@ -1801,6 +1819,41 @@
     return f;
   }
 
+  // --- Local dev: seed browser data from Python app export ---
+  function maybeRestoreDevFixture() {
+    const host = location.hostname;
+    if (host !== "localhost" && host !== "127.0.0.1") return Promise.resolve(false);
+    const params = new URLSearchParams(location.search);
+    const force = params.has("seed") || params.has("restore");
+    if (!force && Store.members().length > 0) return Promise.resolve(false);
+    if (!Excel || !Excel.importBackupFromArrayBuffer) return Promise.resolve(false);
+    return fetch("fixtures/household_backup.xlsx")
+      .then((r) => {
+        if (!r.ok) throw new Error("fixtures/household_backup.xlsx not found");
+        return r.arrayBuffer();
+      })
+      .then((buf) => Excel.importBackupFromArrayBuffer(buf))
+      .then((counts) => {
+        toast(
+          "Loaded Python app data (" + counts.members + " members, " + counts.assets + " assets)",
+          "ok"
+        );
+        return true;
+      })
+      .catch((e) => {
+        console.warn("Dev fixture restore skipped:", e.message || e);
+        return false;
+      });
+  }
+
+  function bootApp() {
+    baseline = ZK.zakatAsOf();
+    setupTabs();
+    renderBaselineMeta();
+    renderDashboard();
+    maybeAutoFetchRates();
+  }
+
   // --- Init ---
   function init() {
     if (!global.XLSX) console.warn("SheetJS not loaded — Excel backup will be unavailable.");
@@ -1808,15 +1861,18 @@
     if (Drive) {
       Drive.setStatusCallback((kind, msg) => toast(msg, kind));
       Store.onSave(() => Drive.scheduleAutoBackup());
-      Drive.maybeSyncMonthRollover().then((rolled) => {
-        if (rolled) refreshAll();
-      });
     }
-    baseline = ZK.zakatAsOf();
-    setupTabs();
-    renderBaselineMeta();
-    renderDashboard();
-    maybeAutoFetchRates();
+    maybeRestoreDevFixture()
+      .then((restored) => {
+        const driveRoll = Drive
+          ? Drive.maybeSyncMonthRollover().catch(() => false)
+          : Promise.resolve(false);
+        return driveRoll.then((rolled) => ({ restored: restored, rolled: rolled }));
+      })
+      .then((state) => {
+        bootApp();
+        if (state.restored || state.rolled) refreshAll();
+      });
   }
 
   // On load, refresh market rates from the internet (default on; opt-out per device).
