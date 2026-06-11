@@ -72,22 +72,22 @@
   }
 
   function sanitizeParams(name, params) {
-    var clean = {};
+    var clean = { send_to: ID };
     var src = params || {};
     var key;
 
     for (key in src) {
       if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
-      if (key === "link_text" || key === "file" || key === "link_url") continue;
+      if (key === "link_text" || key === "file" || key === "link_url" || key === "send_to") continue;
       clean[key] = src[key];
     }
 
-    if (name === "family_name_view") {
+    if (name === "family_name_view" || (name === "section_view" && src.section_id === "family-name")) {
       clean.family_name = FAMILY_NAME;
     }
 
-    if (name === "click" && src.link_url) {
-      clean.outbound_domain = outboundDomain(src.link_url);
+    if (name === "outbound_click" && src.link_url) {
+      clean.link_domain = outboundDomain(src.link_url);
       clean.outbound = true;
     }
 
@@ -110,7 +110,8 @@
 
   function trackEvent(name, params) {
     if (!enabled()) return;
-    global.gtag("event", name, sanitizeParams(name, params));
+    if (!name || !String(name).trim()) return;
+    global.gtag("event", String(name).trim(), sanitizeParams(name, params));
   }
 
   function initConfig() {
@@ -140,7 +141,7 @@
         return;
       }
       if (href.indexOf("http") === 0 && href.indexOf(location.hostname) === -1) {
-        trackEvent("click", { link_url: href });
+        trackEvent("outbound_click", { link_url: href });
         return;
       }
       if (href.indexOf("zakaat") !== -1) {
@@ -189,8 +190,7 @@
     }
   }
 
-  function init() {
-    initConfig();
+  function initEngagement() {
     initMainSiteEngagement();
   }
 
@@ -203,9 +203,12 @@
     anonymizedTitle: anonymizedTitle,
   };
 
+  // Configure GA as soon as this script loads (do not wait for DOMContentLoaded).
+  initConfig();
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", initEngagement);
   } else {
-    init();
+    initEngagement();
   }
 })(window);

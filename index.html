@@ -23,6 +23,7 @@
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag("js", new Date());
+      gtag("config", window.GA_ID);
     </script>
     <script src="js/analytics.js"></script>
 </head>
@@ -43,7 +44,7 @@
         </div>
     </header>
 
-    <section class="splash" id="home" data-analytics-name="Home">
+    <section class="splash" id="home" data-analytics-section data-analytics-name="Home">
         <div class="splash-bg" aria-hidden="true"></div>
         <div class="container splash-grid">
             <div class="splash-copy">
@@ -72,7 +73,7 @@
         </div>
     </div>
 
-    <section class="block" id="about" data-analytics-name="About">
+    <section class="block" id="about" data-analytics-section data-analytics-name="About">
         <div class="container about-layout">
             <div class="profile-stack reveal">
                 <div class="photo-card profile-shot">
@@ -99,7 +100,7 @@
         </div>
     </section>
 
-    <section class="block block-dark" id="experience" data-analytics-name="Experience">
+    <section class="block block-dark" id="experience" data-analytics-section data-analytics-name="Experience">
         <div class="container">
             <div class="section-top center reveal">
                 <span class="eyebrow">Career</span>
@@ -146,7 +147,7 @@
         </div>
     </section>
 
-    <section class="block block-tint" id="education" data-analytics-name="Education">
+    <section class="block block-tint" id="education" data-analytics-section data-analytics-name="Education">
         <div class="container">
             <div class="section-top center reveal">
                 <span class="eyebrow">Qualifications</span>
@@ -164,7 +165,7 @@
         </div>
     </section>
 
-    <section class="block" id="recommendations" data-analytics-name="Recommendations">
+    <section class="block" id="recommendations" data-analytics-section data-analytics-name="Recommendations">
         <div class="container">
             <div class="section-top center reveal">
                 <span class="eyebrow">Endorsements</span>
@@ -184,7 +185,7 @@
         </div>
     </section>
 
-    <section class="block block-tint" id="network" data-analytics-name="Network">
+    <section class="block block-tint" id="network" data-analytics-section data-analytics-name="Network">
         <div class="container">
             <div class="section-top center reveal">
                 <span class="eyebrow">Connect</span>
@@ -201,7 +202,7 @@
         </div>
     </section>
 
-    <section class="block" id="interests" data-analytics-name="Interests">
+    <section class="block" id="interests" data-analytics-section data-analytics-name="Interests">
         <div class="container">
             <div class="section-top center reveal">
                 <span class="eyebrow">Beyond Work</span>
