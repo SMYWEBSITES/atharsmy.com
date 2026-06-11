@@ -320,6 +320,50 @@ form input:focus, form select:focus { outline: 2px solid var(--emerald-600); out
   background: #fff; border-radius: 16px; width: 100%; max-width: 560px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
 }
+.modal-wide { max-width: 620px; }
+.welcome-body .sub { margin-bottom: 16px; line-height: 1.55; }
+.welcome-choices { display: flex; flex-direction: column; gap: 10px; }
+.welcome-choice {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border: 2px solid var(--slate-200);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.welcome-choice:hover { border-color: var(--emerald-300); background: var(--emerald-50); }
+.welcome-choice.selected {
+  border-color: var(--emerald-600);
+  background: var(--emerald-50);
+  box-shadow: 0 0 0 1px var(--emerald-600);
+}
+.welcome-choice-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--emerald-900);
+  margin-bottom: 8px;
+}
+.welcome-benefits {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--slate-600);
+  line-height: 1.5;
+}
+.welcome-benefits li { margin-bottom: 4px; }
+.welcome-benefits li:last-child { margin-bottom: 0; }
+.welcome-action {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--slate-200);
+}
+.welcome-action.hidden { display: none; }
+.welcome-action .btn { margin-top: 10px; }
+.welcome-action .field { margin-top: 10px; }
 .modal-head { padding: 18px 20px; border-bottom: 1px solid var(--slate-200); display: flex; justify-content: space-between; align-items: center; }
 .modal-head h3 { font-size: 16px; color: var(--emerald-900); }
 .modal-body { padding: 20px; }

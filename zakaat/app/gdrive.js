@@ -27,6 +27,7 @@
   let gisLoading = null;
   let autoTimer = null;
   let statusCb = null;
+  let pendingConnect = null;
 
   function loadCfg() {
     try {
@@ -65,6 +66,14 @@
 
   function setAutoSync(v) {
     saveCfg({ auto_sync: !!v });
+  }
+
+  function getDriveEnabled() {
+    return !!loadCfg().drive_enabled;
+  }
+
+  function setDriveEnabled(v) {
+    saveCfg({ drive_enabled: !!v });
   }
 
   function monthKey(date) {
@@ -185,10 +194,13 @@
 
   function connect(opts) {
     opts = opts || {};
+    if (isConnected()) return Promise.resolve({ access_token: accessToken });
+    if (pendingConnect) return pendingConnect;
+
     const clientId = getClientId();
     if (!clientId) return Promise.reject(new Error("Set your Google OAuth Client ID first."));
 
-    return loadGis().then(
+    pendingConnect = loadGis().then(
       () =>
         new Promise((resolve, reject) => {
           try {
@@ -200,6 +212,7 @@
                   if (resp && resp.access_token) {
                     accessToken = resp.access_token;
                     tokenExpiry = Date.now() + (Number(resp.expires_in || 3600) * 1000);
+                    if (opts.interactive) setDriveEnabled(true);
                     resolve(resp);
                   } else {
                     rejectOAuthError(reject, null, resp);
@@ -215,7 +228,10 @@
             reject(e);
           }
         })
-    );
+    ).finally(() => {
+      pendingConnect = null;
+    });
+    return pendingConnect;
   }
 
   function disconnect() {
@@ -233,6 +249,9 @@
 
   function ensureToken() {
     if (isConnected()) return Promise.resolve();
+    if (!getDriveEnabled()) {
+      return Promise.reject(new Error("Sign in to Google Drive first."));
+    }
     return connect({ interactive: false });
   }
 
@@ -425,7 +444,9 @@
   }
 
   function maybeSyncMonthRollover() {
-    if (!getAutoSync() || !isConfigured()) return Promise.resolve(false);
+    if (!getAutoSync() || !isConfigured() || !getDriveEnabled() || !isConnected()) {
+      return Promise.resolve(false);
+    }
     return ensureToken()
       .then(() => prepareCurrentMonth())
       .then((ctx) => {
@@ -469,9 +490,10 @@
   }
 
   function scheduleAutoBackup() {
-    if (!getAutoSync() || !isConfigured()) return;
+    if (!getAutoSync() || !isConfigured() || !getDriveEnabled() || !isConnected()) return;
     clearTimeout(autoTimer);
     autoTimer = setTimeout(() => {
+      if (!isConnected()) return;
       backup()
         .then((res) => {
           const msg = res.rolled
@@ -501,6 +523,8 @@
     originMismatchHelp,
     getAutoSync,
     setAutoSync,
+    getDriveEnabled,
+    setDriveEnabled,
     scheduleAutoBackup,
     maybeSyncMonthRollover,
     prepareCurrentMonth,
