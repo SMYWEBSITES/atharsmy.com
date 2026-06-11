@@ -322,7 +322,7 @@
     const nameInput = el("input", {
       type: "text",
       value: Store.getFamilyName(),
-      placeholder: "e.g. Athar",
+      placeholder: "SMY FAMILY",
       maxlength: "64",
       autocomplete: "family-name",
     });
@@ -1868,7 +1868,7 @@
       } else if (selected === "fresh") {
         const familyInput = el("input", {
           type: "text",
-          placeholder: "e.g. Athar",
+          placeholder: "SMY FAMILY",
           maxlength: "64",
           autocomplete: "family-name",
         });
