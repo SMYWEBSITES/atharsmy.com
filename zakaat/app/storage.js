@@ -13,12 +13,17 @@
   function blankState() {
     return {
       madhab: ZK.DEFAULT_MADHAB,
+      family_name: "",
       auto_rates: true, // fetch live market rates on load by default (opt-out)
       session_rates: Object.assign({}, ZK.DEFAULTS),
       seq: { member: 0, asset: 0, payment: 0 },
       members: [], // { id, name, relationship, assets:[], zakat_payments:[] }
       yearly_rates: [], // { year, gold_inr_per_gram, silver_inr_per_gram, platinum_inr_per_gram, diamond_inr_per_carat, is_estimated, is_user_override, rate_source }
     };
+  }
+
+  function normalizeFamilyName(name) {
+    return String(name || "").trim().replace(/\s+/g, " ").slice(0, 64);
   }
 
   let state = blankState();
@@ -90,6 +95,13 @@
 
   function getMadhab() { return state.madhab || ZK.DEFAULT_MADHAB; }
   function setMadhab(m) { state.madhab = m; save(); }
+
+  function getFamilyName() { return normalizeFamilyName(state.family_name); }
+  function setFamilyName(name) {
+    state.family_name = normalizeFamilyName(name);
+    save();
+    return state.family_name;
+  }
 
   // Default ON: only false when the user explicitly opts out.
   function getAutoRates() { return state.auto_rates !== false; }
@@ -276,6 +288,7 @@
     next.members = Array.isArray(parsed.members) ? parsed.members : [];
     next.yearly_rates = Array.isArray(parsed.yearly_rates) ? parsed.yearly_rates : [];
     next.madhab = parsed.madhab || ZK.DEFAULT_MADHAB;
+    next.family_name = normalizeFamilyName(parsed.family_name);
     state = next;
     _reseed();
     suppressListeners = true;
@@ -287,6 +300,7 @@
     const parsed = sanitize(rawParsed || {});
     const next = blankState();
     next.madhab = parsed.madhab || ZK.DEFAULT_MADHAB;
+    next.family_name = normalizeFamilyName(parsed.family_name);
     if (parsed.session_rates) next.session_rates = Object.assign({}, ZK.DEFAULTS, parsed.session_rates);
 
     const memberByRef = {};
@@ -395,7 +409,7 @@
 
   global.ZKStore = {
     load, save, getState, setState, clearAll, replaceFromBackup, exportState, importState, onSave,
-    getMadhab, setMadhab, getAutoRates, setAutoRates, getRates, setRates,
+    getMadhab, setMadhab, getFamilyName, setFamilyName, getAutoRates, setAutoRates, getRates, setRates,
     members, getMember, addMember, updateMember, deleteMember,
     addAsset, getAsset, updateAsset, deleteAsset,
     assetSnapshots, setSnapshot, deleteSnapshot,

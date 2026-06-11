@@ -60,7 +60,7 @@
 
     // Settings
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
-      aoa(["madhab"], [[state.madhab || ZK.DEFAULT_MADHAB]])), "Settings");
+      aoa(["madhab", "family_name"], [[state.madhab || ZK.DEFAULT_MADHAB, blank(state.family_name)]])), "Settings");
 
     // SessionRates
     const r = Store.getRates();
@@ -345,6 +345,7 @@
 
     const settings = names.includes("Settings") ? sheetTable(wb.Sheets["Settings"], XLSX) : [];
     const madhab = settings.length ? (settings[0].madhab || "hanafi") : "hanafi";
+    const family_name = settings.length ? String(settings[0].family_name || "").trim() : "";
 
     let sessionRates = null;
     if (names.includes("SessionRates")) {
@@ -370,6 +371,7 @@
     return {
       meta,
       madhab: String(madhab).trim() || "hanafi",
+      family_name: family_name,
       session_rates: sessionRates,
       members: memberList,
       assets: assets,

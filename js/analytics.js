@@ -1,6 +1,7 @@
 /*
  * Shared GA4 helpers for atharsmy.com (Profile Site + Zakat Calculator).
- * Privacy: no personal information is sent except the public family name "Athar".
+ * Privacy: profile site sends only the public family name "Athar"; the Zakat app
+ * may send a user-entered household family name when they save it.
  * Requires gtag bootstrap in each HTML page (async gtag.js + dataLayer).
  */
 (function (global) {
@@ -63,6 +64,11 @@
     return "Profile Site";
   }
 
+  function sanitizeFamilyName(value) {
+    if (!value) return "";
+    return String(value).trim().replace(/\s+/g, " ").slice(0, 64);
+  }
+
   function outboundDomain(url) {
     try {
       return new URL(url).hostname.replace(/^www\./, "");
@@ -82,7 +88,12 @@
       clean[key] = src[key];
     }
 
-    if (name === "family_name_view" || (name === "section_view" && src.section_id === "family-name")) {
+    if (name === "family_name_set" || name === "family_name_active") {
+      var entered = sanitizeFamilyName(src.family_name);
+      if (entered) clean.family_name = entered;
+    }
+
+    if (!isZakatApp() && (name === "family_name_view" || (name === "section_view" && src.section_id === "family-name"))) {
       clean.family_name = FAMILY_NAME;
     }
 

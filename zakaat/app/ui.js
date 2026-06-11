@@ -289,6 +289,63 @@
     if (global.SiteAnalytics) global.SiteAnalytics.trackEvent(name, params);
   }
 
+  var trackedFamilyNameActive = false;
+
+  function maybeTrackFamilyNameActive() {
+    const name = Store.getFamilyName();
+    if (!name || trackedFamilyNameActive) return;
+    trackedFamilyNameActive = true;
+    trackEvent("family_name_active", { family_name: name });
+  }
+
+  function saveFamilyName(raw, source) {
+    const prev = Store.getFamilyName();
+    const next = Store.setFamilyName(raw);
+    renderFamilyNameMeta();
+    if (next && next !== prev) {
+      trackEvent("family_name_set", { family_name: next, source: source || "dashboard" });
+      trackedFamilyNameActive = true;
+    } else if (next) {
+      maybeTrackFamilyNameActive();
+    }
+    return next;
+  }
+
+  function renderFamilyNameMeta() {
+    const node = document.getElementById("family-name-meta");
+    if (!node) return;
+    const name = Store.getFamilyName();
+    node.textContent = name ? name + " family" : "";
+  }
+
+  function renderFamilyNamePanel(panel) {
+    const nameInput = el("input", {
+      type: "text",
+      value: Store.getFamilyName(),
+      placeholder: "e.g. Athar",
+      maxlength: "64",
+      autocomplete: "family-name",
+    });
+    const householdPanel = el("div", { class: "panel household-panel" });
+    householdPanel.appendChild(el("h2", { text: "Your household" }));
+    householdPanel.appendChild(el("p", {
+      class: "sub",
+      text: "Enter your family name to label this household. It is saved in this browser and included in Excel backups.",
+    }));
+    householdPanel.appendChild(field("Family name", nameInput, "Surname or family name only — not individual member names."));
+    householdPanel.appendChild(el("div", { class: "btn-row" }, [
+      el("button", {
+        class: "btn",
+        text: "Save family name",
+        onclick: () => {
+          const saved = saveFamilyName(nameInput.value, "dashboard");
+          toast(saved ? "Family name saved" : "Enter a family name", saved ? "ok" : "err");
+        },
+      }),
+    ]));
+    panel.appendChild(householdPanel);
+  }
+
   function trackTabView(tab) {
     const section = TAB_PAGE_TITLES[tab] || tab;
     const title = "Zakat Calculator — " + section;
@@ -325,6 +382,7 @@
   function refreshAll() {
     baseline = ZK.zakatAsOf();
     renderBaselineMeta();
+    renderFamilyNameMeta();
     const active = document.querySelector(".tab-btn.active");
     renderTab(active ? active.dataset.tab : "dashboard");
   }
@@ -353,6 +411,7 @@
       ]),
     ]);
     panel.appendChild(hero);
+    renderFamilyNamePanel(panel);
 
     const rates = Store.getRates();
     const madhab = Store.getMadhab();
@@ -1807,11 +1866,19 @@
         welcomeDriveHelp.appendChild(drivePopupHelpPanel(false));
         actionPanel.appendChild(welcomeDriveHelp);
       } else if (selected === "fresh") {
-        actionPanel.appendChild(el("p", { class: "help", text: "You can add members on the Dashboard and back up anytime from the Backup tab." }));
+        const familyInput = el("input", {
+          type: "text",
+          placeholder: "e.g. Athar",
+          maxlength: "64",
+          autocomplete: "family-name",
+        });
+        actionPanel.appendChild(el("p", { class: "help", text: "Add your family name, then start your household on the Dashboard." }));
+        actionPanel.appendChild(field("Family name", familyInput, "Surname or family name for this household."));
         actionPanel.appendChild(el("button", {
           class: "btn block",
           text: "Start with empty household",
           onclick: () => {
+            saveFamilyName(familyInput.value, "welcome");
             trackEvent("welcome_start", { choice: "fresh" });
             closeModal();
             if (typeof onDone === "function") onDone();
@@ -2215,8 +2282,10 @@
     baseline = ZK.zakatAsOf();
     setupTabs();
     renderBaselineMeta();
+    renderFamilyNameMeta();
     renderDashboard();
     trackTabView("dashboard");
+    maybeTrackFamilyNameActive();
     if (opts.fetchRates !== false) maybeAutoFetchRates();
   }
 
