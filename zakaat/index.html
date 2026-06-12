@@ -14,16 +14,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
-  <!-- Google tag (gtag.js) -->
+  <!-- Google tag (gtag.js) — bootstrap in external file (CSP blocks inline scripts) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-3DFSY795RJ"></script>
-  <script>
-    window.GA_ID = "G-3DFSY795RJ";
-    window.GA_SECTION = "zakat";
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag("js", new Date());
-    gtag("config", window.GA_ID, { send_page_view: false });
-  </script>
+  <script src="../js/gtag-bootstrap.js"></script>
   <script src="../js/analytics.js"></script>
 </head>
 <body>
