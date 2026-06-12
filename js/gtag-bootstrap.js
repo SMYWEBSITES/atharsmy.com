@@ -1,6 +1,6 @@
 /*
  * GA4 gtag bootstrap (external file for CSP-compliant pages).
- * Load after gtag.js; before analytics.js.
+ * Queues calls on dataLayer until gtag.js loads; config runs in analytics.js.
  */
 (function (global) {
   "use strict";
@@ -15,10 +15,5 @@
     global.dataLayer.push(arguments);
   }
   global.gtag = gtag;
-
   gtag("js", new Date());
-
-  var config = {};
-  if (global.GA_SECTION === "zakat") config.send_page_view = false;
-  gtag("config", global.GA_ID, config);
 })(window);

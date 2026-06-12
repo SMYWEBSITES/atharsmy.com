@@ -20,6 +20,10 @@
     "/privacy.html": "/privacy",
   };
 
+  function debugMode() {
+    return /(?:\?|&)ga_debug=1(?:&|$)/.test(location.search || "");
+  }
+
   function enabled() {
     var host = location.hostname;
     return host !== "localhost" && host !== "127.0.0.1" && typeof global.gtag === "function";
@@ -122,21 +126,25 @@
   function trackEvent(name, params) {
     if (!enabled()) return;
     if (!name || !String(name).trim()) return;
-    global.gtag("event", String(name).trim(), sanitizeParams(name, params));
+    var payload = sanitizeParams(name, params);
+    if (debugMode()) console.log("[GA]", name, payload);
+    global.gtag("event", String(name).trim(), payload);
   }
 
   function initConfig() {
     if (!enabled()) return;
     var zakat = isZakatApp();
     var pagePath = normalizePath();
-    global.gtag("config", ID, {
+    var config = {
       send_page_view: !zakat,
       page_path: pagePath,
       page_title: anonymizedTitle(pagePath),
       content_group: contentGroup(),
       allow_google_signals: false,
       allow_ad_personalization_signals: false,
-    });
+    };
+    if (debugMode()) config.debug_mode = true;
+    global.gtag("config", ID, config);
   }
 
   function initMainSiteEngagement() {
