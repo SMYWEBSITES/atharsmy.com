@@ -82,7 +82,7 @@
   }
 
   function sanitizeParams(name, params) {
-    var clean = { send_to: ID };
+    var clean = {};
     var src = params || {};
     var key;
 
@@ -133,13 +133,11 @@
 
   function initConfig() {
     if (!enabled()) return;
-    var zakat = isZakatApp();
     var pagePath = normalizePath();
     var config = {
-      send_page_view: !zakat,
+      send_page_view: true,
       page_path: pagePath,
       page_title: anonymizedTitle(pagePath),
-      content_group: contentGroup(),
       allow_google_signals: false,
       allow_ad_personalization_signals: false,
     };
@@ -221,6 +219,8 @@
     normalizePath: normalizePath,
     anonymizedTitle: anonymizedTitle,
   };
+
+  global.dispatchEvent(new Event("site-analytics-ready"));
 
   // Configure GA as soon as this script loads (do not wait for DOMContentLoaded).
   initConfig();
