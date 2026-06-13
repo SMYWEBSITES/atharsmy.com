@@ -3,7 +3,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   var topbar = document.querySelector(".topbar");
   if (topbar) {
-    var hasHero = document.querySelector(".splash");
+    var hasHero = document.querySelector(".splash, .page-hero");
     if (hasHero) {
       topbar.classList.add("topbar--overlay");
       var onScroll = function () {
@@ -66,6 +66,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     document.querySelectorAll(".reveal").forEach(function (el) {
       observer.observe(el);
+    });
+
+    document.querySelectorAll(".metrics-grid, .cards-3, .cards-2, .cards-auto, .heritage-grid, .family-lineage, .journey, .policy-page .container").forEach(function (group) {
+      group.querySelectorAll(".reveal").forEach(function (el, i) {
+        el.style.transitionDelay = Math.min(i * 0.07, 0.42) + "s";
+      });
     });
   } else {
     document.querySelectorAll(".reveal").forEach(function (el) {

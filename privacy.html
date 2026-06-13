@@ -16,7 +16,7 @@
     <script src="js/analytics.js"></script>
 </head>
 <body>
-    <header class="topbar">
+    <header class="topbar topbar--overlay">
         <div class="container">
             <a class="logo" href="index.html">S M Y ATHAR</a>
             <button class="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
@@ -32,13 +32,17 @@
         </div>
     </header>
 
+    <section class="page-hero page-hero--privacy" data-analytics-section data-analytics-name="Privacy Hero">
+        <div class="page-hero-bg" aria-hidden="true"></div>
+        <div class="container page-hero-inner reveal">
+            <span class="eyebrow">Legal</span>
+            <h1 class="title">Privacy Policy</h1>
+            <p class="sub">Effective date: 11 June 2026 · Applies to <a href="https://atharsmy.com/">atharsmy.com</a> and the <a href="zakaat/">Household Zakat Calculator</a>.</p>
+        </div>
+    </section>
+
     <section class="policy-page" id="privacy" data-analytics-section data-analytics-name="Privacy Policy">
         <div class="container">
-            <div class="policy-intro reveal">
-                <span class="eyebrow">Legal</span>
-                <h1 class="title">Privacy Policy</h1>
-                <p class="sub">Effective date: 11 June 2026 · Applies to <a href="https://atharsmy.com/">atharsmy.com</a> and the <a href="zakaat/">Household Zakat Calculator</a>.</p>
-            </div>
 
             <article class="policy-card reveal">
                 <h2>1. Who we are</h2>
@@ -138,12 +142,18 @@
 
     <footer class="footer">
         <div class="container">
-            <ul class="footer-links">
-                <li><a href="index.html">Home</a></li>
-                <li><a href="familyHistory.html">Family History</a></li>
-                <li><a href="zakaat/">Zakat Calculator</a></li>
-                <li><a href="privacy.html">Privacy</a></li>
-            </ul>
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <strong class="footer-logo">S M Y ATHAR</strong>
+                    <p class="footer-tagline">Sheik Mohammed Yesdani Athar · Insurance GRC · Bengaluru</p>
+                </div>
+                <ul class="footer-links">
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="familyHistory.html">Family History</a></li>
+                    <li><a href="zakaat/">Zakat Calculator</a></li>
+                    <li><a href="privacy.html">Privacy</a></li>
+                </ul>
+            </div>
             <small>&copy; S M Y ATHAR</small>
         </div>
     </footer>
