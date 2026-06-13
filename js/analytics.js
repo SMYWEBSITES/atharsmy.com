@@ -143,6 +143,10 @@
     };
     if (debugMode()) config.debug_mode = true;
     global.gtag("config", ID, config);
+    if (debugMode()) {
+      console.log("[GA] configured", ID, "path:", pagePath);
+      console.log("[GA] In Network, filter 'google-analytics' (all types). Ad blockers hide collect requests.");
+    }
   }
 
   function initMainSiteEngagement() {
