@@ -1258,7 +1258,7 @@
     if (items.length) wrap.appendChild(el("div", { class: "bd-grid" }, items));
     wrap.appendChild(el("div", { class: "bd-total", text:
       "Wealth " + ZK.fmtINR(s.total_wealth_inr) +
-      " \u00b7 Nisab (" + s.nisab_basis + ") " + ZK.fmtINR(s.nisab_wealth_inr) + " / " + ZK.fmtINR(s.nisab_threshold_inr) +
+      " \u00b7 Nisab (" + s.nisab_basis + ") " + ZK.fmtINR(s.nisab_threshold_inr) +
       " \u00b7 Due " + ZK.fmtINR(s.zakat_due_inr) + " \u00b7 Paid " + ZK.fmtINR(s.total_paid_inr) +
       " \u00b7 Remaining " + ZK.fmtINR(Math.max(0, s.remaining_inr)) }));
     if (s.hawl_pending_wealth_inr > 0) {
