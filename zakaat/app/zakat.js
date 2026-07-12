@@ -870,9 +870,100 @@
     return monthFmt.format(d) + " AH";
   }
 
+  // --- Currency (display + FX target for live rates) ---
+  const CURRENCIES = [
+    ["INR", "Indian Rupee"], ["USD", "US Dollar"], ["EUR", "Euro"], ["GBP", "British Pound"],
+    ["AED", "UAE Dirham"], ["SAR", "Saudi Riyal"], ["QAR", "Qatari Riyal"], ["KWD", "Kuwaiti Dinar"],
+    ["BHD", "Bahraini Dinar"], ["OMR", "Omani Rial"], ["PKR", "Pakistani Rupee"], ["BDT", "Bangladeshi Taka"],
+    ["LKR", "Sri Lankan Rupee"], ["NPR", "Nepalese Rupee"], ["MYR", "Malaysian Ringgit"], ["IDR", "Indonesian Rupiah"],
+    ["SGD", "Singapore Dollar"], ["BND", "Brunei Dollar"], ["TRY", "Turkish Lira"], ["EGP", "Egyptian Pound"],
+    ["MAD", "Moroccan Dirham"], ["DZD", "Algerian Dinar"], ["TND", "Tunisian Dinar"], ["JOD", "Jordanian Dinar"],
+    ["NGN", "Nigerian Naira"], ["KES", "Kenyan Shilling"], ["ZAR", "South African Rand"],
+    ["CAD", "Canadian Dollar"], ["AUD", "Australian Dollar"], ["NZD", "New Zealand Dollar"],
+    ["JPY", "Japanese Yen"], ["CNY", "Chinese Yuan"], ["CHF", "Swiss Franc"],
+    ["SEK", "Swedish Krona"], ["NOK", "Norwegian Krone"], ["DKK", "Danish Krone"],
+    ["RUB", "Russian Ruble"], ["BRL", "Brazilian Real"], ["MXN", "Mexican Peso"],
+  ];
+
+  const REGION_CURRENCY = {
+    IN: "INR", US: "USD", GB: "GBP", AE: "AED", SA: "SAR", QA: "QAR", KW: "KWD",
+    BH: "BHD", OM: "OMR", PK: "PKR", BD: "BDT", LK: "LKR", NP: "NPR", MY: "MYR",
+    ID: "IDR", SG: "SGD", BN: "BND", TR: "TRY", EG: "EGP", MA: "MAD", DZ: "DZD",
+    TN: "TND", JO: "JOD", NG: "NGN", KE: "KES", ZA: "ZAR", CA: "CAD", AU: "AUD",
+    NZ: "NZD", JP: "JPY", CN: "CNY", CH: "CHF", SE: "SEK", NO: "NOK", DK: "DKK",
+    RU: "RUB", BR: "BRL", MX: "MXN",
+  };
+  "AT BE CY DE EE ES FI FR GR HR IE IT LT LU LV MT NL PT SI SK".split(" ")
+    .forEach((r) => { REGION_CURRENCY[r] = "EUR"; });
+
+  const TZ_CURRENCY = {
+    "Asia/Kolkata": "INR", "Asia/Calcutta": "INR", "Asia/Karachi": "PKR", "Asia/Dhaka": "BDT",
+    "Asia/Dubai": "AED", "Asia/Riyadh": "SAR", "Asia/Qatar": "QAR", "Asia/Kuwait": "KWD",
+    "Asia/Bahrain": "BHD", "Asia/Muscat": "OMR", "Asia/Colombo": "LKR", "Asia/Kathmandu": "NPR",
+    "Asia/Kuala_Lumpur": "MYR", "Asia/Jakarta": "IDR", "Asia/Singapore": "SGD", "Asia/Brunei": "BND",
+    "Europe/Istanbul": "TRY", "Africa/Cairo": "EGP", "Africa/Casablanca": "MAD", "Africa/Lagos": "NGN",
+    "Africa/Nairobi": "KES", "Africa/Johannesburg": "ZAR", "Europe/London": "GBP",
+    "Australia/Sydney": "AUD", "Pacific/Auckland": "NZD", "Asia/Tokyo": "JPY", "Asia/Shanghai": "CNY",
+  };
+
+  const KNOWN_CURRENCY = {};
+  CURRENCIES.forEach((c) => { KNOWN_CURRENCY[c[0]] = true; });
+
+  // Best-effort local-currency guess from the browser's locale/timezone.
+  // No network call and nothing about the user leaves the device.
+  function detectCurrency() {
+    try {
+      const locales = (navigator.languages && navigator.languages.length)
+        ? navigator.languages : [navigator.language || ""];
+      for (const loc of locales) {
+        const m = String(loc).match(/[-_]([A-Za-z]{2})(?:\b|$)/);
+        if (m) {
+          const cur = REGION_CURRENCY[m[1].toUpperCase()];
+          if (cur) return cur;
+        }
+      }
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      if (TZ_CURRENCY[tz]) return TZ_CURRENCY[tz];
+      if (/^America\//.test(tz)) return "USD";
+      if (/^Europe\//.test(tz)) return "EUR";
+    } catch (e) { /* fall through */ }
+    return "INR";
+  }
+
+  let displayCurrency = "INR";
+  let moneyFmt = null;
+
+  function setDisplayCurrency(code) {
+    code = String(code || "INR").toUpperCase();
+    if (!KNOWN_CURRENCY[code]) code = "INR";
+    displayCurrency = code;
+    try {
+      moneyFmt = new Intl.NumberFormat(code === "INR" ? "en-IN" : "en", {
+        style: "currency", currency: code, currencyDisplay: "narrowSymbol",
+      });
+    } catch (e) { moneyFmt = null; }
+  }
+
+  function getDisplayCurrency() { return displayCurrency; }
+
+  function currencySymbol(code) {
+    code = String(code || displayCurrency).toUpperCase();
+    try {
+      const parts = new Intl.NumberFormat("en", {
+        style: "currency", currency: code, currencyDisplay: "narrowSymbol",
+      }).formatToParts(1);
+      const p = parts.find((x) => x.type === "currency");
+      return p ? p.value : code;
+    } catch (e) { return code; }
+  }
+
+  setDisplayCurrency("INR");
+
   // --- Formatting ---
+  // Historically INR-only (hence the name); now formats in the selected display currency.
   function fmtINR(amount) {
     const n = num(amount);
+    if (moneyFmt) return moneyFmt.format(n);
     return "\u20B9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   function fmtGrams(value) {
@@ -903,6 +994,8 @@
     assetsAsOfYear, snapshotState, valuationChangeNotes, displayValueInr,
     // calendar
     zakatAsOf, currentZakatBaselineDate, nextZakatBaselineDate, formatHijriDate, hijriParts, todayUTC,
+    // currency
+    CURRENCIES, detectCurrency, setDisplayCurrency, getDisplayCurrency, currencySymbol,
     // format
     fmtINR, fmtGrams, fmtDate, num,
   });

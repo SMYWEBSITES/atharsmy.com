@@ -2,10 +2,11 @@
  * Optional live market-rate fetch — runs entirely in the browser via fetch().
  *
  * The app still works 100% offline; this module only reaches the internet when
- * the user explicitly clicks "Fetch live rates". It mirrors the server's spot
- * path (app/rate_fetcher.py): metal USD/oz from gold-api.com, converted to
- * INR/gram using a live USD->INR rate. Diamond has no free public API, so the
- * current/manual value is kept (same behaviour as the server).
+ * the user explicitly clicks "Fetch live rates" (or has auto-fetch on). It
+ * mirrors the server's spot path (app/rate_fetcher.py): metal USD/oz from
+ * gold-api.com, converted to the user's currency per gram using a live
+ * USD->{currency} rate. Diamond has no free public API, so the current/manual
+ * value is kept (same behaviour as the server).
  *
  * Only CORS-enabled, key-free endpoints are used so they work from a static page.
  */
@@ -17,7 +18,7 @@
   const HTTP_TIMEOUT_MS = 12000;
 
   const GOLD_API = "https://api.gold-api.com/price"; // /XAU /XAG /XPT  -> USD per troy oz
-  const FX_PRIMARY = "https://api.frankfurter.dev/v1/latest?base=USD&symbols=INR";
+  const FX_PRIMARY = "https://api.frankfurter.dev/v1/latest?base=USD&symbols={CUR}";
   const FX_FALLBACK = "https://open.er-api.com/v6/latest/USD";
 
   const SYMBOLS = {
@@ -26,14 +27,15 @@
     platinum_inr_per_gram: "XPT",
   };
 
-  // Plausibility bounds (INR/gram) to reject obviously-bad or poisoned data.
-  const SANITY = {
-    gold_inr_per_gram: [1000, 100000],
-    silver_inr_per_gram: [10, 5000],
-    platinum_inr_per_gram: [500, 50000],
+  // Plausibility bounds in USD per troy oz — currency-independent, so they
+  // reject obviously-bad or poisoned data no matter what the FX target is.
+  const SANITY_USD_OZ = {
+    gold_inr_per_gram: [500, 20000],
+    silver_inr_per_gram: [2, 1000],
+    platinum_inr_per_gram: [100, 20000],
   };
-  // USD/INR plausibility band.
-  const FX_BOUNDS = [40, 200];
+  // USD->{currency} plausibility: positive, finite, not absurd.
+  const FX_BOUNDS = [1e-4, 1e6];
 
   function inRange(v, range) {
     return typeof v === "number" && isFinite(v) && v >= range[0] && v <= range[1];
@@ -50,18 +52,19 @@
       .finally(() => clearTimeout(timer));
   }
 
-  function fetchUsdInr() {
-    return fetchJson(FX_PRIMARY)
+  function fetchUsdFx(currency) {
+    if (currency === "USD") return Promise.resolve(1);
+    return fetchJson(FX_PRIMARY.replace("{CUR}", currency))
       .then((d) => {
-        const v = d && d.rates && Number(d.rates.INR);
+        const v = d && d.rates && Number(d.rates[currency]);
         if (inRange(v, FX_BOUNDS)) return v;
-        throw new Error("implausible INR in response");
+        throw new Error("implausible " + currency + " in response");
       })
       .catch(() =>
         fetchJson(FX_FALLBACK).then((d) => {
-          const v = d && d.rates && Number(d.rates.INR);
+          const v = d && d.rates && Number(d.rates[currency]);
           if (inRange(v, FX_BOUNDS)) return v;
-          throw new Error("USD/INR unavailable");
+          throw new Error("USD/" + currency + " unavailable");
         })
       );
   }
@@ -75,39 +78,42 @@
   }
 
   /*
-   * Resolve live metal rates. Returns:
+   * Resolve live metal rates in the given currency (default INR). Returns:
    *   { rates: {gold_inr_per_gram, silver_inr_per_gram, platinum_inr_per_gram, diamond_inr_per_carat},
-   *     sources: {key: label}, warnings: [..], usd_inr, fetched_at, ok }
+   *     sources: {key: label}, warnings: [..], usd_inr, currency, fetched_at, ok }
+   * (The *_inr field names are historical — values are in `currency`.)
    * Diamond is carried over from currentDiamond (manual value).
    */
-  function fetchLiveRates(currentDiamond) {
+  function fetchLiveRates(currentDiamond, currency) {
+    currency = String(currency || "INR").toUpperCase();
     const fetchedAt = new Date();
     const label = fetchedAt.toLocaleString();
     const warnings = [];
     const sources = {};
     const values = {};
 
-    return fetchUsdInr()
-      .then((usdInr) => {
+    return fetchUsdFx(currency)
+      .then((fx) => {
         const jobs = Object.keys(SYMBOLS).map((key) => {
           const symbol = SYMBOLS[key];
           return fetchSpotUsdOz(symbol)
             .then((usdPerOz) => {
-              const perGram = (usdPerOz * usdInr) / TROY_OZ_GRAMS;
-              if (!inRange(perGram, SANITY[key])) {
-                warnings.push("Ignored an out-of-range " + symbol + " price (\u20b9" + perGram.toFixed(0) + "/g).");
+              if (!inRange(usdPerOz, SANITY_USD_OZ[key])) {
+                warnings.push("Ignored an out-of-range " + symbol + " quote ($" + usdPerOz.toFixed(2) + "/oz).");
                 return;
               }
-              values[key] = perGram;
-              sources[key] = "Spot " + symbol + " ($" + usdPerOz.toFixed(2) + "/oz \u00d7 \u20b9" + usdInr.toFixed(2) + "/USD) \u00b7 " + label;
+              values[key] = (usdPerOz * fx) / TROY_OZ_GRAMS;
+              sources[key] = "Spot " + symbol + " ($" + usdPerOz.toFixed(2) + "/oz"
+                + (currency === "USD" ? "" : " × " + fx.toFixed(2) + " " + currency + "/USD")
+                + ") · " + label;
             })
             .catch((e) => {
               warnings.push("Could not fetch " + symbol + " spot price (" + e.message + ").");
             });
         });
-        return Promise.all(jobs).then(() => usdInr);
+        return Promise.all(jobs).then(() => fx);
       })
-      .then((usdInr) => {
+      .then((fx) => {
         const diamond = ZK.num(currentDiamond);
         const rates = {
           gold_inr_per_gram: values.gold_inr_per_gram,
@@ -115,11 +121,11 @@
           platinum_inr_per_gram: values.platinum_inr_per_gram,
           diamond_inr_per_carat: diamond,
         };
-        sources.diamond_inr_per_carat = "Manual / unchanged (no public diamond API) \u00b7 checked " + label;
+        sources.diamond_inr_per_carat = "Manual / unchanged (no public diamond API) · checked " + label;
         const ok = ["gold_inr_per_gram", "silver_inr_per_gram", "platinum_inr_per_gram"].every(
           (k) => values[k] && values[k] > 0
         );
-        return { rates, sources, warnings, usd_inr: usdInr, fetched_at: fetchedAt, ok };
+        return { rates, sources, warnings, usd_inr: fx, currency, fetched_at: fetchedAt, ok };
       });
   }
 

@@ -14,6 +14,7 @@
     return {
       madhab: ZK.DEFAULT_MADHAB,
       family_name: "",
+      currency: "", // display/FX currency; "" = not chosen yet (detect on first run)
       auto_rates: true, // fetch live market rates on load by default (opt-out)
       session_rates: Object.assign({}, ZK.DEFAULTS),
       seq: { member: 0, asset: 0, payment: 0 },
@@ -53,6 +54,9 @@
       if (raw) {
         const parsed = JSON.parse(raw);
         state = Object.assign(blankState(), parsed);
+        // Data saved before currency support is in INR — pin it so a locale
+        // detection can't silently relabel existing amounts.
+        if (!parsed.currency) state.currency = "INR";
         state.seq = Object.assign({ member: 0, asset: 0, payment: 0 }, parsed.seq || {});
         state.session_rates = Object.assign({}, ZK.DEFAULTS, parsed.session_rates || {});
         state.members = parsed.members || [];
@@ -106,6 +110,13 @@
   // Default ON: only false when the user explicitly opts out.
   function getAutoRates() { return state.auto_rates !== false; }
   function setAutoRates(v) { state.auto_rates = !!v; save(); }
+
+  // "" means never chosen (fresh install) — the UI detects and saves one.
+  function getCurrency() { return state.currency || ""; }
+  function setCurrency(code) {
+    state.currency = String(code || "").toUpperCase();
+    save();
+  }
 
   function getRates() { return Object.assign({}, ZK.DEFAULTS, state.session_rates); }
   function setRates(r) {
@@ -289,6 +300,7 @@
     next.yearly_rates = Array.isArray(parsed.yearly_rates) ? parsed.yearly_rates : [];
     next.madhab = parsed.madhab || ZK.DEFAULT_MADHAB;
     next.family_name = normalizeFamilyName(parsed.family_name);
+    if (!parsed.currency) next.currency = "INR"; // pre-currency snapshots are INR
     state = next;
     _reseed();
     suppressListeners = true;
@@ -301,6 +313,7 @@
     const next = blankState();
     next.madhab = parsed.madhab || ZK.DEFAULT_MADHAB;
     next.family_name = normalizeFamilyName(parsed.family_name);
+    next.currency = parsed.currency || state.currency || "INR"; // Excel backups don't carry currency
     if (parsed.session_rates) next.session_rates = Object.assign({}, ZK.DEFAULTS, parsed.session_rates);
 
     const memberByRef = {};
@@ -409,7 +422,8 @@
 
   global.ZKStore = {
     load, save, getState, setState, clearAll, replaceFromBackup, exportState, importState, onSave,
-    getMadhab, setMadhab, getFamilyName, setFamilyName, getAutoRates, setAutoRates, getRates, setRates,
+    getMadhab, setMadhab, getFamilyName, setFamilyName, getAutoRates, setAutoRates,
+    getCurrency, setCurrency, getRates, setRates,
     members, getMember, addMember, updateMember, deleteMember,
     addAsset, getAsset, updateAsset, deleteAsset,
     assetSnapshots, setSnapshot, deleteSnapshot,

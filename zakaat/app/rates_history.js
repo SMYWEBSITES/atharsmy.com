@@ -23,7 +23,12 @@
   const SILVER_GOLD_OZ_RATIO_FALLBACK = 70.0;
 
   const FREE_GOLD_JSON = "https://freegoldapi.com/data/latest.json";
-  const FRANKFURTER_RANGE = "https://api.frankfurter.dev/v1/{start}..{end}?base=USD&symbols=INR";
+  const FRANKFURTER_RANGE = "https://api.frankfurter.dev/v1/{start}..{end}?base=USD&symbols={CUR}";
+  // Frankfurter (ECB) only covers ~30 major currencies. For the rest (SAR,
+  // AED, PKR, …) there is no free FX history, so we fall back to holding
+  // today's USD rate constant across all years — exact for pegged currencies,
+  // a clearly-flagged estimate otherwise.
+  const FX_LATEST_FALLBACK = "https://open.er-api.com/v6/latest/USD";
 
   function fetchJson(url) {
     const ctrl = new AbortController();
@@ -54,14 +59,14 @@
     return out;
   }
 
-  function usdInrByYear(payload, startYear, endYear) {
+  function usdFxByYear(payload, currency, startYear, endYear) {
     const rates = (payload && payload.rates) || {};
     const byYear = {};
     for (const date of Object.keys(rates)) {
       const year = parseInt(date.slice(0, 4), 10);
-      const inr = rates[date] && Number(rates[date].INR);
-      if (inr > 0 && year >= startYear && year <= endYear) {
-        (byYear[year] = byYear[year] || []).push([date, inr]);
+      const fx = rates[date] && Number(rates[date][currency]);
+      if (fx > 0 && year >= startYear && year <= endYear) {
+        (byYear[year] = byYear[year] || []).push([date, fx]);
       }
     }
     const out = {};
@@ -84,12 +89,15 @@
   }
 
   /*
-   * fetchHistoricalRates(startYear, endYear, anchor)
+   * fetchHistoricalRates(startYear, endYear, anchor, currency)
    *   anchor: current session rates (used for platinum + diamond per year).
+   *   currency: FX target (default INR). Field names stay *_inr for
+   *   compatibility, but values are in this currency.
    * Resolves: { ratesByYear: {year: {gold,silver,platinum,diamond}},
    *             warnings: [...], estimated: true }
    */
-  function fetchHistoricalRates(startYear, endYear, anchor) {
+  function fetchHistoricalRates(startYear, endYear, anchor, currency) {
+    currency = String(currency || "INR").toUpperCase();
     startYear = parseInt(startYear, 10);
     endYear = parseInt(endYear, 10);
     if (!(startYear >= 1900) || !(endYear >= startYear)) {
@@ -97,18 +105,40 @@
     }
     const rangeUrl = FRANKFURTER_RANGE
       .replace("{start}", startYear + "-01-01")
-      .replace("{end}", endYear + "-12-31");
+      .replace("{end}", endYear + "-12-31")
+      .replace("{CUR}", currency);
 
     const warnings = [];
     return Promise.all([
       fetchJson(FREE_GOLD_JSON).catch(() => null),
-      fetchJson(rangeUrl).catch(() => null),
+      currency === "USD" ? Promise.resolve(null) : fetchJson(rangeUrl).catch(() => null),
     ]).then(([goldList, fxPayload]) => {
       const goldOz = goldUsdOzByYear(goldList, startYear, endYear);
-      const usdInr = usdInrByYear(fxPayload, startYear, endYear);
+      const usdFx = usdFxByYear(fxPayload, currency, startYear, endYear);
+      if (currency === "USD") {
+        for (let y = startYear; y <= endYear; y++) usdFx[y] = 1;
+      }
 
-      if (!Object.keys(goldOz).length) warnings.push("Could not load historical gold prices (freegoldapi.com).");
-      if (!Object.keys(usdInr).length) warnings.push("Could not load historical USD/INR (Frankfurter).");
+      const needFxFallback = !Object.keys(usdFx).length;
+      const fallbackJob = needFxFallback ? fetchJson(FX_LATEST_FALLBACK).catch(() => null) : Promise.resolve(null);
+      return fallbackJob.then((latest) => {
+        if (needFxFallback && latest) {
+          const fx = Number(latest.rates && latest.rates[currency]);
+          if (fx > 0 && isFinite(fx)) {
+            for (let y = startYear; y <= endYear; y++) usdFx[y] = fx;
+            warnings.push(
+              "No free USD/" + currency + " exchange-rate history exists, so today's rate (" +
+              fx.toFixed(2) + " " + currency + "/USD) was applied to every year. That is exact for " +
+              "currencies pegged to the dollar and an estimate otherwise — edit any year to override."
+            );
+          }
+        }
+
+        if (!Object.keys(goldOz).length) warnings.push("Could not load historical gold prices (freegoldapi.com).");
+        if (!Object.keys(usdFx).length) warnings.push("Could not load historical USD/" + currency + " exchange rates — enter yearly rates manually.");
+        return { goldOz, usdFx };
+      });
+    }).then(({ goldOz, usdFx }) => {
 
       const anchorPlat = ZK.num(anchor && anchor.platinum_inr_per_gram);
       const anchorDia = ZK.num(anchor && anchor.diamond_inr_per_carat);
@@ -116,7 +146,7 @@
       const ratesByYear = {};
       const missing = [];
       for (let y = startYear; y <= endYear; y++) {
-        const fx = valueForYear(y, usdInr);
+        const fx = valueForYear(y, usdFx);
         const gOz = valueForYear(y, goldOz);
         if (!fx || !gOz) { missing.push(y); continue; }
         const sOz = gOz / SILVER_GOLD_OZ_RATIO_FALLBACK;

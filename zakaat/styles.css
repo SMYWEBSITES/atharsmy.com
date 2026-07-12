@@ -429,10 +429,17 @@ form select:focus {
   position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 40px 16px; z-index: 50; overflow-y: auto;
+  /* Track the visible area when the on-screen keyboard is up (JS sets --app-vvh) */
+  height: var(--app-vvh, 100%);
 }
 .modal {
   background: #fff; border-radius: 16px; width: 100%; max-width: 560px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  /* Head and foot stay visible; only the body scrolls */
+  display: flex; flex-direction: column;
+  max-height: calc(100vh - 80px);
+  max-height: calc(100dvh - 80px);
+  max-height: calc(var(--app-vvh, 100dvh) - 80px);
 }
 .modal-wide { max-width: 620px; }
 .welcome-body .sub { margin-bottom: 20px; line-height: 1.65; font-size: 14px; }
@@ -491,9 +498,15 @@ form select:focus {
 .popup-help-list li { margin-bottom: 6px; }
 .popup-help-list li:last-child { margin-bottom: 0; }
 .popup-help .setup-body .help { margin-top: 8px; }
-.modal-head { padding: 18px 20px; border-bottom: 1px solid var(--slate-200); display: flex; justify-content: space-between; align-items: center; }
+.modal-head { padding: 18px 20px; border-bottom: 1px solid var(--slate-200); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
 .modal-head h3 { font-size: 16px; color: var(--emerald-900); }
-.modal-body { padding: 22px 24px 24px; }
+.modal-body {
+  padding: 22px 24px 24px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding: 60px; /* keep focused inputs clear of head/foot */
+}
 .modal-body form .field:last-of-type { margin-bottom: 6px; }
 .modal-foot {
   padding: 16px 24px 20px;
@@ -502,6 +515,8 @@ form select:focus {
   justify-content: flex-end;
   gap: 12px;
   flex-wrap: wrap;
+  flex-shrink: 0;
+  background: #fff;
 }
 .modal-close { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--slate-500); line-height: 1; }
 
@@ -718,7 +733,7 @@ td.num.neg { color: var(--red-600); }
   }
 
   .modal-overlay {
-    padding: 16px 12px;
+    padding: 16px 12px 0;
     align-items: flex-end;
   }
 
@@ -726,6 +741,13 @@ td.num.neg { color: var(--red-600); }
     max-width: none;
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    max-height: calc(var(--app-vvh, 100dvh) - 16px);
+  }
+
+  .modal-foot {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
 
   #toast-root {

@@ -60,7 +60,7 @@
 
     // Settings
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
-      aoa(["madhab", "family_name"], [[state.madhab || ZK.DEFAULT_MADHAB, blank(state.family_name)]])), "Settings");
+      aoa(["madhab", "family_name", "currency"], [[state.madhab || ZK.DEFAULT_MADHAB, blank(state.family_name), state.currency || "INR"]])), "Settings");
 
     // SessionRates
     const r = Store.getRates();
@@ -183,6 +183,7 @@
     const baseline = ZK.zakatAsOf();
     const household = ZK.computeHousehold(members, rates, madhab, baseline);
     const rules = ZK.MADHAB_RULES[madhab];
+    const cur = (Store.getCurrency && Store.getCurrency()) || "INR";
 
     // Summary sheet
     const summary = [];
@@ -190,19 +191,19 @@
     summary.push(["School", rules.label]);
     summary.push(["Calculated as of (Zakat baseline)", ZK.fmtDate(baseline)]);
     summary.push([]);
-    summary.push(["Market rates"]);
-    summary.push(["Gold (INR/gram)", ZK.num(rates.gold_inr_per_gram)]);
-    summary.push(["Silver (INR/gram)", ZK.num(rates.silver_inr_per_gram)]);
-    summary.push(["Platinum (INR/gram)", ZK.num(rates.platinum_inr_per_gram)]);
-    summary.push(["Diamond (INR/carat)", ZK.num(rates.diamond_inr_per_carat)]);
+    summary.push(["Market rates (" + cur + ")"]);
+    summary.push(["Gold (" + cur + "/gram)", ZK.num(rates.gold_inr_per_gram)]);
+    summary.push(["Silver (" + cur + "/gram)", ZK.num(rates.silver_inr_per_gram)]);
+    summary.push(["Platinum (" + cur + "/gram)", ZK.num(rates.platinum_inr_per_gram)]);
+    summary.push(["Diamond (" + cur + "/carat)", ZK.num(rates.diamond_inr_per_carat)]);
     summary.push([]);
     summary.push(["Household totals"]);
-    summary.push(["Total Zakat due (INR)", round2(household.total_zakat_inr)]);
-    summary.push(["Total paid (INR)", round2(household.total_paid_inr)]);
-    summary.push(["Total remaining (INR)", round2(Math.max(0, household.total_remaining_inr))]);
+    summary.push(["Total Zakat due (" + cur + ")", round2(household.total_zakat_inr)]);
+    summary.push(["Total paid (" + cur + ")", round2(household.total_paid_inr)]);
+    summary.push(["Total remaining (" + cur + ")", round2(Math.max(0, household.total_remaining_inr))]);
     summary.push([]);
     summary.push(["Per member"]);
-    summary.push(["Member", "Eligible", "Wealth (INR)", "Nisab (INR)", "Zakat due (INR)", "Paid (INR)", "Remaining (INR)"]);
+    summary.push(["Member", "Eligible", "Wealth (" + cur + ")", "Nisab (" + cur + ")", "Zakat due (" + cur + ")", "Paid (" + cur + ")", "Remaining (" + cur + ")"]);
     household.members.forEach((s) => {
       summary.push([
         s.member_name, s.is_eligible ? "Yes" : "No",
@@ -224,30 +225,30 @@
       rows.push([m.name + " (" + (m.relationship || "Family") + ")"]);
       rows.push(["Eligible", s.is_eligible ? "Yes" : "No"]);
       rows.push(["Nisab basis", s.nisab_basis]);
-      rows.push(["Zakatable wealth (INR)", round2(s.nisab_wealth_inr)]);
-      rows.push(["Nisab threshold (INR)", round2(s.nisab_threshold_inr)]);
-      rows.push(["Zakat due (INR)", round2(s.zakat_due_inr)]);
-      rows.push(["Paid (INR)", round2(s.total_paid_inr)]);
-      rows.push(["Remaining (INR)", round2(Math.max(0, s.remaining_inr))]);
+      rows.push(["Zakatable wealth (" + cur + ")", round2(s.nisab_wealth_inr)]);
+      rows.push(["Nisab threshold (" + cur + ")", round2(s.nisab_threshold_inr)]);
+      rows.push(["Zakat due (" + cur + ")", round2(s.zakat_due_inr)]);
+      rows.push(["Paid (" + cur + ")", round2(s.total_paid_inr)]);
+      rows.push(["Remaining (" + cur + ")", round2(Math.max(0, s.remaining_inr))]);
       if (s.hawl_pending_wealth_inr > 0) {
-        rows.push(["Awaiting hawl (INR)", round2(s.hawl_pending_wealth_inr) + " across " + s.assets_pending_hawl + " asset(s)"]);
+        rows.push(["Awaiting hawl (" + cur + ")", round2(s.hawl_pending_wealth_inr) + " across " + s.assets_pending_hawl + " asset(s)"]);
       }
       rows.push([]);
-      rows.push(["Zakat by component", "INR"]);
+      rows.push(["Zakat by component", cur]);
       ZK.CHART_KEY_ORDER.concat(["total"]).forEach((k) => {
         const z = ZK.componentZakatValues(s)[k];
         if (k === "total" || (z && z > 0.005)) rows.push([ZK.COMPONENT_LABELS[k] || k, round2(z)]);
       });
       rows.push([]);
       rows.push(["Assets"]);
-      rows.push(["Category", "Description", "Details", "Value (INR)"]);
+      rows.push(["Category", "Description", "Details", "Value (" + cur + ")"]);
       (m.assets || []).forEach((a) => {
         const val = ZK.effectiveValuationInr(a, rates, baseline);
         rows.push([a.category, a.description || "", assetDetailText(a), round2(val)]);
       });
       rows.push([]);
       rows.push(["Payments"]);
-      rows.push(["Given to", "Amount (INR)"]);
+      rows.push(["Given to", "Amount (" + cur + ")"]);
       (m.zakat_payments || []).forEach((p) => rows.push([p.given_to, round2(ZK.num(p.amount_inr))]));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), safeSheetName(m.name, used));
     });
@@ -346,6 +347,7 @@
     const settings = names.includes("Settings") ? sheetTable(wb.Sheets["Settings"], XLSX) : [];
     const madhab = settings.length ? (settings[0].madhab || "hanafi") : "hanafi";
     const family_name = settings.length ? String(settings[0].family_name || "").trim() : "";
+    const currency = settings.length ? String(settings[0].currency || "").trim().toUpperCase() : "";
 
     let sessionRates = null;
     if (names.includes("SessionRates")) {
@@ -372,6 +374,7 @@
       meta,
       madhab: String(madhab).trim() || "hanafi",
       family_name: family_name,
+      currency: currency,
       session_rates: sessionRates,
       members: memberList,
       assets: assets,
@@ -386,7 +389,9 @@
     try {
       const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf;
       const parsed = parseBackupArrayBuffer(bytes);
-      return Promise.resolve(Store.replaceFromBackup(parsed));
+      const counts = Store.replaceFromBackup(parsed);
+      ZK.setDisplayCurrency(Store.getCurrency()); // backup may carry a different currency
+      return Promise.resolve(counts);
     } catch (err) {
       return Promise.reject(err);
     }

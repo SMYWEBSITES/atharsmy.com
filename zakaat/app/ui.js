@@ -42,6 +42,29 @@
     setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 250); }, 3200);
   }
 
+  // Keep --app-vvh equal to the *visible* viewport height while a modal is
+  // open, so the sheet (and its Save footer) shrinks above the on-screen
+  // keyboard instead of being covered by it. Android resizes the layout
+  // viewport via the interactive-widget meta; iOS Safari only updates
+  // window.visualViewport, which is what we mirror here.
+  let vvCleanup = null;
+  function watchViewportForModal() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const sync = () => {
+      document.documentElement.style.setProperty("--app-vvh", vv.height + "px");
+    };
+    sync();
+    vv.addEventListener("resize", sync);
+    vv.addEventListener("scroll", sync);
+    vvCleanup = () => {
+      vv.removeEventListener("resize", sync);
+      vv.removeEventListener("scroll", sync);
+      document.documentElement.style.removeProperty("--app-vvh");
+      vvCleanup = null;
+    };
+  }
+
   function openModal(title, bodyNode, footButtons, opts) {
     opts = opts || {};
     const root = document.getElementById("modal-root");
@@ -52,6 +75,16 @@
     }
     const head = el("div", { class: "modal-head" }, headChildren);
     const body = el("div", { class: "modal-body" }, bodyNode);
+    // After the keyboard animates in, bring the focused field into the
+    // scrollable body so it isn't hidden under the head/foot or keyboard.
+    body.addEventListener("focusin", (e) => {
+      const t = e.target;
+      if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) {
+        setTimeout(() => {
+          try { t.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (err) { /* older browsers */ }
+        }, 300);
+      }
+    });
     const foot = el("div", { class: "modal-foot" }, footButtons || []);
     const modal = el("div", { class: "modal" + (opts.wide ? " modal-wide" : "") }, [head, body, foot]);
     const overlay = el("div", { class: "modal-overlay" });
@@ -60,12 +93,18 @@
     }
     overlay.appendChild(modal);
     root.appendChild(overlay);
+    if (!vvCleanup) watchViewportForModal();
   }
-  function closeModal() { clear(document.getElementById("modal-root")); }
+  function closeModal() {
+    clear(document.getElementById("modal-root"));
+    if (vvCleanup) vvCleanup();
+  }
 
   function hasHouseholdData() {
     return Store.members().length > 0;
   }
+
+  function curCode() { return Store.getCurrency() || "INR"; }
 
   function drivePopupHelpPanel(open) {
     const details = el("details", { class: "setup-details popup-help" });
@@ -472,10 +511,18 @@
     tablePanel.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [thead, el("tbody", null, rows)]))));
     panel.appendChild(tablePanel);
 
-    // Component breakdown (household wealth)
+    } // end members.length
+
+    // Family & assets management lives on the dashboard.
+    buildFamily(panel);
+  }
+
+  // Household wealth split by component as horizontal bars (moved here from
+  // the dashboard; the dashboard stays focused on totals + family management).
+  function renderComponentBarsPanel(summaries) {
     const wealth = {};
     ZK.CHART_KEY_ORDER.forEach((k) => { wealth[k] = 0; });
-    household.members.forEach((s) => {
+    summaries.forEach((s) => {
       const wv = ZK.componentWealthValues(s);
       ZK.CHART_KEY_ORDER.forEach((k) => { wealth[k] += wv[k] || 0; });
     });
@@ -485,16 +532,11 @@
       el("div", { class: "bar-track" }, el("div", { class: "bar-fill", style: "width:" + (wealth[k] / maxVal * 100).toFixed(1) + "%" })),
       el("div", { class: "bar-val num", text: ZK.fmtINR(wealth[k]) }),
     ]));
-    if (barRows.length) {
-      const bp = el("div", { class: "panel" });
-      bp.appendChild(el("h2", { text: "Wealth by component" }));
-      bp.appendChild(el("div", { class: "bars" }, barRows));
-      panel.appendChild(bp);
-    }
-    } // end members.length
-
-    // Family & assets management lives on the dashboard.
-    buildFamily(panel);
+    if (!barRows.length) return null;
+    const bp = el("div", { class: "panel" });
+    bp.appendChild(el("h2", { text: "Wealth by component" }));
+    bp.appendChild(el("div", { class: "bars" }, barRows));
+    return bp;
   }
 
   // --- Analytics ---
@@ -539,6 +581,10 @@
     // Rates over time graph
     panel.appendChild(renderRatesGraphPanel());
 
+    // Household wealth split by component (bars)
+    const barsPanel = renderComponentBarsPanel(summaries);
+    if (barsPanel) panel.appendChild(barsPanel);
+
     // Active component columns (those with any value across the household)
     const totals = {}; ZK.CHART_KEY_ORDER.forEach((k) => { totals[k] = 0; });
     summaries.forEach((s) => {
@@ -550,7 +596,7 @@
     // Wealth table: components as ROWS (fewer columns → no horizontal scroll),
     // members as columns, plus a household total with an inline share bar.
     const tablePanel = el("div", { class: "panel" });
-    tablePanel.appendChild(el("h2", { text: "Wealth by component" }));
+    tablePanel.appendChild(el("h2", { text: "Wealth by component — per member" }));
     const memberWv = summaries.map((s) => ({ name: s.member_name, wv: ZK.componentWealthValues(s, true) }));
     const householdMax = Math.max(1, ...cols.map((k) => totals[k]));
     const headRow = el("tr", null, [th("Component")]
@@ -795,7 +841,7 @@
 
     const inp = isMetal
       ? el("input", { type: "number", step: "0.001", value: editWeight, placeholder: isDiamond ? "carats" : "grams", style: "max-width:130px" })
-      : el("input", { type: "number", step: "0.01", value: editInr, placeholder: "INR", style: "max-width:140px" });
+      : el("input", { type: "number", step: "0.01", value: editInr, placeholder: curCode(), style: "max-width:140px" });
 
     const saveBtn = el("button", { class: "link", text: "Save", onclick: () => {
       const state = ZK.snapshotState(a, year);
@@ -977,7 +1023,7 @@
   function renderRatesGraphPanel() {
     const panel = el("div", { class: "panel" });
     panel.appendChild(el("h2", { text: "Market rates over time" }));
-    panel.appendChild(el("p", { class: "sub", html: "Per-year metal rates (\u20b9/gram). Fetch a range on the <strong>Market Rates</strong> tab to populate history. Each line is scaled to its own range." }));
+    panel.appendChild(el("p", { class: "sub", html: "Per-year metal rates (" + curCode() + "/gram). Fetch a range on the <strong>Market Rates</strong> tab to populate history. Each line is scaled to its own range." }));
 
     const rows = Store.yearlyRates().slice().sort((a, b) => a.year - b.year);
     const metals = [
@@ -1361,7 +1407,7 @@
     const preview = el("div", { class: "preview" });
 
     // Field containers
-    const fValuation = field("Value (INR)", valuation);
+    const fValuation = field("Value (" + curCode() + ")", valuation);
     const fWeight = field("Gross weight (grams)", weight);
     const fPurity = field("Karat (purity)", puritySelect);
     const fPurityCustom = field("Custom purity", purityCustom, "Enter karat, fineness, % or decimal fraction.");
@@ -1370,8 +1416,8 @@
     const fQuantity = field("Head count", quantity);
     const fJewelry = el("div", { class: "field" }, el("label", { class: "checkbox-field" }, [jewelry, el("span", { text: " Personal jewelry (exempt in Shafi'i/Maliki/Hanbali)" })]));
     const fBalanceAsOf = field("Balance as of date", balanceAsOf, "Date of the PF balance entered above.");
-    const fEmp = field("Employee monthly (INR)", empMonthly);
-    const fEr = field("Employer monthly (INR)", erMonthly);
+    const fEmp = field("Employee monthly (" + curCode() + ")", empMonthly);
+    const fEr = field("Employer monthly (" + curCode() + ")", erMonthly);
     const fRate = field("Annual interest rate (%)", annualRate);
     const fHawl = field("Hawl start date", hawlStart, "When you began holding this wealth (for the 1-lunar-year rule). Optional.");
     const fAcq = field("Acquired year", acquiredYear);
@@ -1428,10 +1474,10 @@
       // value field label
       const valLabel = fValuation.querySelector("label");
       if (valLabel) {
-        if (isLivestock) valLabel.textContent = "Value per head (INR)";
-        else if (isPF) valLabel.textContent = "Current PF balance (INR)";
-        else if (isDiamond) valLabel.textContent = "Value (INR, optional if carats set)";
-        else valLabel.textContent = "Value (INR)";
+        if (isLivestock) valLabel.textContent = "Value per head (" + curCode() + ")";
+        else if (isPF) valLabel.textContent = "Current PF balance (" + curCode() + ")";
+        else if (isDiamond) valLabel.textContent = "Value (" + curCode() + ", optional if carats set)";
+        else valLabel.textContent = "Value (" + curCode() + ")";
       }
       // hide manual value for metal-by-weight (computed)
       show(fValuation, !isMetalWeight);
@@ -1547,8 +1593,8 @@
   // --- Payment form ---
   function paymentForm(memberId, existing) {
     const given = el("input", { type: "text", value: existing ? existing.given_to || "" : "", placeholder: "Who received it, e.g. Local masjid" });
-    const amount = el("input", { type: "number", step: "0.01", value: existing && existing.amount_inr != null ? existing.amount_inr : "", placeholder: "Amount in INR" });
-    const body = el("form", null, [field("Given to", given), field("Amount (INR)", amount)]);
+    const amount = el("input", { type: "number", step: "0.01", value: existing && existing.amount_inr != null ? existing.amount_inr : "", placeholder: "Amount" });
+    const body = el("form", null, [field("Given to", given), field("Amount (" + curCode() + ")", amount)]);
     const save = el("button", { class: "btn", text: existing ? "Save payment" : "Add payment", onclick: (e) => {
       e.preventDefault();
       if (!given.value.trim() || ZK.num(amount.value) <= 0) { toast("Enter recipient and amount", "err"); return; }
@@ -1579,13 +1625,53 @@
     const rp = el("div", { class: "panel" });
     rp.appendChild(el("h2", { text: "Market rates" }));
     rp.appendChild(el("p", { class: "sub", html: "Enter rates manually, or fetch live spot prices from the internet. The app stays in your browser \u2014 fetching is optional and only happens when you click below." }));
+
+    const cur = curCode();
+    const curSel = el("select", null, ZK.CURRENCIES.map((c) =>
+      el("option", { value: c[0], selected: c[0] === cur ? "selected" : null, text: c[0] + " \u2014 " + c[1] })));
+    curSel.addEventListener("change", () => {
+      const newCur = curSel.value;
+      Store.setCurrency(newCur);
+      ZK.setDisplayCurrency(newCur);
+      refreshAll();
+      // Currency and metal rates stay linked: refetch spot prices in the new
+      // currency right away so the old currency's numbers don't linger.
+      if (Rates) {
+        toast("Currency set to " + newCur + " \u2014 updating metal rates\u2026", "ok");
+        Rates.fetchLiveRates(Store.getRates().diamond_inr_per_carat, newCur)
+          .then((res) => {
+            const merged = Store.getRates();
+            let changed = false;
+            ["gold_inr_per_gram", "silver_inr_per_gram", "platinum_inr_per_gram"].forEach((k) => {
+              if (res.rates[k] > 0) { merged[k] = Math.round(res.rates[k] * 100) / 100; changed = true; }
+            });
+            if (changed) {
+              Store.setRates(merged);
+              toast("Metal rates updated in " + newCur + " \u2014 verify against today's local rates", "ok");
+            } else {
+              toast("Couldn't fetch rates in " + newCur + " \u2014 enter today's rates manually", "err");
+            }
+            refreshAll();
+          })
+          .catch(() => {
+            toast("Couldn't fetch rates in " + newCur + " \u2014 enter today's rates manually (values still show the old currency's numbers)", "err");
+          });
+      } else {
+        toast("Currency set to " + newCur + " \u2014 update the metal rates manually", "ok");
+      }
+    });
+    rp.appendChild(field("Currency", curSel));
+    rp.appendChild(el("div", { class: "help", text: "Detected from your device's locale on first use \u2014 change it here if that guess is wrong. Changing it refetches today's metal rates in the new currency; asset values and diamond rates you entered are not converted." }));
+
+    rp.appendChild(el("div", { class: "notice warn", text: "Live rates are wholesale spot prices converted from USD markets. They can differ from your local jeweller's or bank's rate for the day \u2014 please check today's metal prices in your area and update the values below if needed." }));
+
     const gold = el("input", { type: "number", step: "0.01", value: rates.gold_inr_per_gram });
     const silver = el("input", { type: "number", step: "0.01", value: rates.silver_inr_per_gram });
     const plat = el("input", { type: "number", step: "0.01", value: rates.platinum_inr_per_gram });
     const dia = el("input", { type: "number", step: "0.01", value: rates.diamond_inr_per_carat });
     const formNode = el("form", null, [
-      el("div", { class: "field-row" }, [field("Gold (INR/gram, 24K)", gold), field("Silver (INR/gram)", silver)]),
-      el("div", { class: "field-row" }, [field("Platinum (INR/gram)", plat), field("Diamond (INR/carat)", dia)]),
+      el("div", { class: "field-row" }, [field("Gold (" + cur + "/gram, 24K)", gold), field("Silver (" + cur + "/gram)", silver)]),
+      el("div", { class: "field-row" }, [field("Platinum (" + cur + "/gram)", plat), field("Diamond (" + cur + "/carat)", dia)]),
     ]);
     rp.appendChild(formNode);
 
@@ -1599,13 +1685,13 @@
       fetchBtn.disabled = true;
       fetchBtn.textContent = "Fetching\u2026";
       clear(sourceBox);
-      Rates.fetchLiveRates(dia.value)
+      Rates.fetchLiveRates(dia.value, curCode())
         .then((res) => {
           if (res.rates.gold_inr_per_gram > 0) gold.value = res.rates.gold_inr_per_gram.toFixed(2);
           if (res.rates.silver_inr_per_gram > 0) silver.value = res.rates.silver_inr_per_gram.toFixed(2);
           if (res.rates.platinum_inr_per_gram > 0) plat.value = res.rates.platinum_inr_per_gram.toFixed(2);
           renderRateSources(sourceBox, res);
-          toast(res.ok ? "Live rates fetched \u2014 review and Save" : "Some rates couldn't be fetched", res.ok ? "ok" : "err");
+          toast(res.ok ? "Live rates fetched \u2014 verify against today's local rates, then Save" : "Some rates couldn't be fetched", res.ok ? "ok" : "err");
         })
         .catch((err) => {
           clear(sourceBox);
@@ -1631,8 +1717,8 @@
       Store.setAutoRates(autoChk.checked);
       toast(autoChk.checked ? "Auto-fetch on load enabled" : "Auto-fetch on load disabled", "ok");
     });
-    autoWrap.appendChild(el("label", { class: "checkbox-field" }, [autoChk, el("span", { text: " Automatically fetch live + yearly rates each time the app loads" })]));
-    autoWrap.appendChild(el("div", { class: "help", text: "On by default. Current gold/silver/platinum and the per-year history refresh from the internet on startup (diamond stays manual; your manual year overrides are never replaced). Turn off to stay fully offline." }));
+    autoWrap.appendChild(el("label", { class: "checkbox-field" }, [autoChk, el("span", { text: " Automatically fetch today's live metal rates each time the app loads" })]));
+    autoWrap.appendChild(el("div", { class: "help", text: "On by default. Only today's gold/silver/platinum spot rates refresh on startup (diamond stays manual). Historical yearly rates are never touched on load — they update only when you click “Update historical rates” below. Turn off to stay fully offline." }));
     rp.appendChild(autoWrap);
 
     rp.appendChild(sourceBox);
@@ -1646,27 +1732,39 @@
   function renderYearlyRatesPanel() {
     const panel = el("div", { class: "panel" });
     panel.appendChild(el("h2", { text: "Historical / yearly rates" }));
-    panel.appendChild(el("p", { class: "sub", html: "Per-year metal rates for year-by-year valuation. Gold &amp; USD/INR are fetched from the internet; silver/platinum are estimated in-browser (edit to override). Used when an asset is valued as of a past year." }));
+    panel.appendChild(el("p", { class: "sub", html: "Per-year metal rates for year-by-year valuation. Gold &amp; the USD exchange rate are fetched from the internet; silver/platinum are estimated in-browser (edit to override). Used when an asset is valued as of a past year. <strong>These update only when you click the button below — never on page load.</strong>" }));
 
     const now = ZK.todayUTC().getUTCFullYear();
     const startIn = el("input", { type: "number", step: "1", value: now - 5, style: "max-width:110px" });
     const endIn = el("input", { type: "number", step: "1", value: now, style: "max-width:110px" });
-    const histBox = el("div", { class: "rate-sources" });
+    const histBox = el("div", { class: "rate-sources", id: "hist-warnings" });
 
-    const fetchBtn = el("button", { class: "btn secondary", text: "Fetch yearly rates" });
+    const fetchBtn = el("button", { class: "btn secondary", text: "Update historical rates" });
     fetchBtn.addEventListener("click", (e) => {
       e.preventDefault();
       if (!History) { toast("Historical fetch unavailable", "err"); return; }
       const prev = fetchBtn.textContent;
       fetchBtn.disabled = true; fetchBtn.textContent = "Fetching\u2026";
       clear(histBox);
-      History.fetchHistoricalRates(startIn.value, endIn.value, Store.getRates())
+      History.fetchHistoricalRates(startIn.value, endIn.value, Store.getRates(), curCode())
         .then((res) => {
-          const years = Object.keys(res.ratesByYear);
-          years.forEach((y) => Store.setYearlyRate(parseInt(y, 10), res.ratesByYear[y], { is_estimated: true, is_user_override: false, rate_source: "internet" }));
-          (res.warnings || []).forEach((w) => histBox.appendChild(el("div", { class: "notice warn", text: w })));
-          toast(years.length ? "Fetched " + years.length + " year(s)" : "No years fetched", years.length ? "ok" : "err");
+          const existing = {};
+          Store.yearlyRates().forEach((r) => { existing[r.year] = r; });
+          let updated = 0, kept = 0;
+          Object.keys(res.ratesByYear).forEach((y) => {
+            const yr = parseInt(y, 10);
+            if (existing[yr] && existing[yr].is_user_override) { kept++; return; } // never clobber manual years
+            Store.setYearlyRate(yr, res.ratesByYear[y], { is_estimated: true, is_user_override: false, rate_source: "internet" });
+            updated++;
+          });
+          toast(updated
+            ? "Updated " + updated + " year(s)" + (kept ? " \u00b7 kept " + kept + " manual override(s)" : "")
+            : (kept ? "All " + kept + " year(s) are manual overrides \u2014 nothing changed" : "No years fetched"),
+            updated || kept ? "ok" : "err");
           renderRates();
+          // renderRates() rebuilt the panel \u2014 attach warnings to the fresh box
+          const freshBox = document.getElementById("hist-warnings") || histBox;
+          (res.warnings || []).forEach((w) => freshBox.appendChild(el("div", { class: "notice warn", text: w })));
         })
         .catch((err) => { histBox.appendChild(el("div", { class: "notice warn", text: "Fetch failed: " + err.message })); toast("Historical fetch failed", "err"); })
         .finally(() => { fetchBtn.disabled = false; fetchBtn.textContent = prev; });
@@ -1729,7 +1827,7 @@
 
   function renderRateSources(box, res) {
     clear(box);
-    box.appendChild(el("p", { class: "sub", text: "Fetched " + res.fetched_at.toLocaleString() + (res.usd_inr ? " \u00b7 USD/INR \u20b9" + res.usd_inr.toFixed(2) : "") + ". Click Save rates to apply." }));
+    box.appendChild(el("p", { class: "sub", text: "Fetched " + res.fetched_at.toLocaleString() + (res.usd_inr && res.currency !== "USD" ? " \u00b7 USD/" + (res.currency || "INR") + " " + res.usd_inr.toFixed(2) : "") + ". Click Save rates to apply." }));
     const order = ["gold_inr_per_gram", "silver_inr_per_gram", "platinum_inr_per_gram", "diamond_inr_per_carat"];
     const ul = el("ul", { class: "source-list" });
     order.forEach((k) => {
@@ -2142,10 +2240,11 @@
   }
 
   function buildGuideSections(root, madhab, rules, allMadhabs) {
-    const goldRate = ZK.DEFAULTS.gold_inr_per_gram, silverRate = ZK.DEFAULTS.silver_inr_per_gram;
+    const sessionRates = Store.getRates();
+    const goldRate = sessionRates.gold_inr_per_gram, silverRate = sessionRates.silver_inr_per_gram;
     const nisabLine = rules.nisab_basis === "silver"
-      ? "<strong>" + ZK.NISAB_SILVER_GRAMS.toFixed(1) + " g \u00d7 silver \u20b9/g</strong>"
-      : "<strong>" + ZK.NISAB_GOLD_GRAMS.toFixed(1) + " g \u00d7 gold \u20b9/g</strong>";
+      ? "<strong>" + ZK.NISAB_SILVER_GRAMS.toFixed(1) + " g \u00d7 silver rate/g</strong>"
+      : "<strong>" + ZK.NISAB_GOLD_GRAMS.toFixed(1) + " g \u00d7 gold rate/g</strong>";
     const jewelryLine = rules.jewelry_exempt
       ? "Mark <strong>personal adornment</strong> per item to exempt worn pieces (" + rules.label + ")."
       : "All gold and silver counts, including jewelry (Hanafi).";
@@ -2153,7 +2252,7 @@
       : rules.debt_deduction === "cash_only" ? "From cash only" : "Deducted from investments";
 
     root.appendChild(collapsible("About this app", [
-      html("p", "Household Zakat calculator for families: add <strong>family members</strong>, record <strong>assets</strong> in INR, set <strong>market rates</strong>, and see <strong>due, paid, and remaining</strong> on the dashboard. On first open, choose an Excel backup from your computer or Google Drive. The <strong>Backup</strong> tab handles export and Drive sync. Everything runs in your browser; data stays on your device."),
+      html("p", "Household Zakat calculator for families: add <strong>family members</strong>, record <strong>assets</strong> in your currency, set <strong>market rates</strong>, and see <strong>due, paid, and remaining</strong> on the dashboard. On first open, choose an Excel backup from your computer or Google Drive. The <strong>Backup</strong> tab handles export and Drive sync. Everything runs in your browser; data stays on your device."),
       html("ul", "<li><strong>Not a fatwa</strong> \u2014 confirm with your scholar.</li><li><strong>2.5%</strong> on zakatable wealth at/above nisab; madhhab rules for jewelry and debts.</li><li><strong>Zakat baseline:</strong> first Friday of Ramadan (shown in the header).</li>"),
     ]));
 
@@ -2185,7 +2284,7 @@
     root.appendChild(collapsible("How this app calculates", [
       html("p", "Per-member assets \u2192 values at baseline date \u2192 nisab check \u2192 rates \u2192 minus payments.", "sub"),
       html("div", calcTable, "table-wrap"),
-      html("p", "Session rates until you fetch: gold \u20b9" + Math.round(goldRate) + "/g, silver \u20b9" + silverRate + "/g.", "help"),
+      html("p", "Session rates until you fetch: gold " + ZK.fmtINR(goldRate) + "/g, silver " + ZK.fmtINR(silverRate) + "/g.", "help"),
     ]));
 
     // Schools comparison table (current highlighted)
@@ -2232,7 +2331,7 @@
     const faqs = [
       ["Is this app a fatwa or legal advice?", "<strong>No.</strong> It is a household calculator with scholar-reviewed defaults. Confirm with a qualified scholar before paying."],
       ["What is nisab (\u0646\u0635\u0627\u0628)?", "The minimum zakatable wealth before Zakat is due. This app uses gold or silver weights \u00d7 rates per your <strong>" + rules.label + "</strong> setting."],
-      ["Why does the dashboard show \u20b90 Zakat due?", "Usually: below <strong>nisab</strong>; still in <strong>hawl</strong>; property is <strong>personal/rental</strong>; jewelry marked <strong>personal adornment</strong> (where exempt); or values not entered yet."],
+      ["Why does the dashboard show zero Zakat due?", "Usually: below <strong>nisab</strong>; still in <strong>hawl</strong>; property is <strong>personal/rental</strong>; jewelry marked <strong>personal adornment</strong> (where exempt); or values not entered yet."],
       ["Do I use purchase price or today\u2019s value?", "<strong>Today\u2019s market value</strong> for cash, shares, trade property, and metals. Zakat is on what wealth is worth at your Zakat date, not original cost."],
       ["Do I pay Zakat on the house I live in?", "<strong>No</strong> on the building \u2014 <strong>Property \u2192 Personal residence</strong>. It may show on Analytics for records but is excluded from Zakat."],
       ["I have two houses \u2014 what do I enter?", "Two <strong>Property</strong> assets: <strong>Personal residence</strong> for your home, <strong>Rental</strong> or <strong>For sale / trade</strong> for the other. Rent received \u2192 <strong>Cash</strong>."],
@@ -2307,6 +2406,10 @@
   function init() {
     if (!global.XLSX) console.warn("SheetJS not loaded — Excel backup will be unavailable.");
     Store.load();
+    // First run on this device: guess the local currency from the browser's
+    // locale/timezone (existing pre-currency data is pinned to INR in Store.load).
+    if (!Store.getCurrency()) Store.setCurrency(ZK.detectCurrency());
+    ZK.setDisplayCurrency(Store.getCurrency());
     if (Drive) {
       Drive.setStatusCallback((kind, msg) => toast(msg, kind));
       Store.onSave(() => Drive.scheduleAutoBackup());
@@ -2333,58 +2436,29 @@
       });
   }
 
-  // On load, refresh market rates from the internet (default on; opt-out per device).
-  // Silent and non-blocking: if offline or a value is implausible, stored rates stay.
+  // On load, refresh today's market rates from the internet (default on; opt-out
+  // per device). Silent and non-blocking: if offline or a value is implausible,
+  // stored rates stay. Historical yearly rates are deliberately NOT touched here —
+  // they only change via "Update historical rates" on the Market Rates tab.
   function maybeAutoFetchRates() {
     if (!Rates || !Store.getAutoRates()) return;
     const current = Store.getRates();
-    Rates.fetchLiveRates(current.diamond_inr_per_carat)
+    Rates.fetchLiveRates(current.diamond_inr_per_carat, curCode())
       .then((res) => {
         const merged = Object.assign({}, current);
         let changed = false;
         ["gold_inr_per_gram", "silver_inr_per_gram", "platinum_inr_per_gram"].forEach((k) => {
-          if (res.rates[k] > 0) { merged[k] = res.rates[k]; changed = true; }
+          if (res.rates[k] > 0) { merged[k] = Math.round(res.rates[k] * 100) / 100; changed = true; }
         });
         if (changed) {
           Store.setRates(merged);
           baseline = ZK.zakatAsOf();
           renderBaselineMeta();
           refreshAll();
-          toast("Market rates updated from the internet", "ok");
+          toast("Today's metal rates updated (" + curCode() + ") — spot prices; verify against your local rates on the Market Rates tab", "ok");
         }
       })
-      .catch(() => { /* offline or blocked — keep stored rates silently */ })
-      .finally(() => { maybeAutoFetchYearly(); });
-  }
-
-  // On load, also refresh per-year historical rates (default on; same toggle).
-  // Never overwrites years you've manually overridden; silent if offline.
-  function maybeAutoFetchYearly() {
-    if (!History || !Store.getAutoRates()) return;
-    const cy = ZK.todayUTC().getUTCFullYear();
-    const starts = [];
-    Store.members().forEach((m) => (m.assets || []).forEach((a) => { const ay = effectiveAcquiredYear(a); if (ay) starts.push(ay); }));
-    let startYear = starts.length ? Math.min.apply(null, starts) : cy - 5;
-    if (cy - startYear > 20) startYear = cy - 20;
-    if (startYear > cy) startYear = cy;
-    History.fetchHistoricalRates(startYear, cy, Store.getRates())
-      .then((res) => {
-        const existing = {};
-        Store.yearlyRates().forEach((r) => { existing[r.year] = r; });
-        let n = 0;
-        Object.keys(res.ratesByYear).forEach((y) => {
-          const yr = parseInt(y, 10);
-          if (existing[yr] && existing[yr].is_user_override) return; // keep manual overrides
-          Store.setYearlyRate(yr, res.ratesByYear[y], { is_estimated: true, is_user_override: false, rate_source: "internet" });
-          n++;
-        });
-        if (n) {
-          const active = document.querySelector(".tab-btn.active");
-          const tab = active ? active.dataset.tab : "dashboard";
-          if (tab === "rates" || tab === "analytics") renderTab(tab);
-        }
-      })
-      .catch(() => { /* offline or blocked — keep stored yearly rates silently */ });
+      .catch(() => { /* offline or blocked — keep stored rates silently */ });
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
