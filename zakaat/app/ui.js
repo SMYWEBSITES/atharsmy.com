@@ -374,6 +374,7 @@
   function renderFamilyNamePanel(panel) {
     const nameInput = el("input", {
       type: "text",
+      id: "family-name-input",
       value: Store.getFamilyName(),
       placeholder: "SMY FAMILY",
       maxlength: "64",
@@ -383,9 +384,9 @@
     householdPanel.appendChild(el("h2", { text: "Your household" }));
     householdPanel.appendChild(el("p", {
       class: "sub",
-      text: "Add a family name to label this household on screen, in Excel backups, and in reports. It stays on this device unless you export or sync a backup.",
+      text: "Add and save your family name first — it is required before adding members and assets. It labels this household on screen, in Excel backups, and in reports, and stays on this device unless you export or sync a backup.",
     }));
-    householdPanel.appendChild(field("Family name", nameInput, "Family or surname only — for example SMY FAMILY. Individual member names are added separately below."));
+    householdPanel.appendChild(field("Family name (required)", nameInput, "Family or surname only — for example SMY FAMILY. Individual member names are added separately below."));
     householdPanel.appendChild(el("div", { class: "btn-row" }, [
       el("button", {
         class: "btn",
@@ -487,33 +488,8 @@
     summaryPanel.appendChild(cards);
     panel.appendChild(summaryPanel);
 
-    if (members.length) {
-      panel.appendChild(renderProjectionPanel(members, madhab));
-    }
-
-    if (members.length) {
-    // Per-member table
-    const tablePanel = el("div", { class: "panel" });
-    tablePanel.appendChild(el("h2", { text: "By family member" }));
-    const rows = household.members.map((s) => el("tr", null, [
-      el("td", { text: s.member_name }),
-      el("td", null, el("span", { class: "pill " + (s.is_eligible ? "green" : "gray"), text: s.is_eligible ? "Eligible" : "Below nisab" })),
-      el("td", { class: "num", text: ZK.fmtINR(s.total_wealth_inr) }),
-      el("td", { class: "num", text: ZK.fmtINR(s.nisab_threshold_inr) }),
-      el("td", { class: "num", text: ZK.fmtINR(s.zakat_due_inr) }),
-      el("td", { class: "num", text: ZK.fmtINR(s.total_paid_inr) }),
-      el("td", { class: "num", text: ZK.fmtINR(Math.max(0, s.remaining_inr)) }),
-    ]));
-    const thead = el("thead", null, el("tr", null, [
-      th("Member"), th("Status"), th("Wealth", true), th("Nisab", true),
-      th("Zakat amount", true), th("Paid", true), th("Remaining", true),
-    ]));
-    tablePanel.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [thead, el("tbody", null, rows)]))));
-    panel.appendChild(tablePanel);
-
-    } // end members.length
-
-    // Family & assets management lives on the dashboard.
+    // Baseline projections and the per-member table live on Analytics;
+    // the dashboard stays focused on totals + family & asset management.
     buildFamily(panel);
   }
 
@@ -621,7 +597,7 @@
 
     // Per-member zakat eligibility summary
     const zp = el("div", { class: "panel" });
-    zp.appendChild(el("h2", { text: "Zakat by member" }));
+    zp.appendChild(el("h2", { text: "By family member" }));
     const zRows = summaries.map((s) => el("tr", null, [
       el("td", { text: s.member_name }),
       el("td", null, el("span", { class: "pill " + (s.is_eligible ? "green" : "gray"), text: s.is_eligible ? "Eligible" : "Below nisab" })),
@@ -1179,12 +1155,27 @@
     const head = el("div", { class: "panel" });
     head.appendChild(el("h2", { text: "Family members & assets" }));
     head.appendChild(el("p", { class: "sub", text: "Add each person in your household, then expand their section to record assets and Zakat payments." }));
-    head.appendChild(el("button", { class: "btn", text: "Add family member", onclick: () => memberForm() }));
+    head.appendChild(el("button", { class: "btn", text: "Add family member", onclick: () => {
+      // Family name is mandatory before any members/assets are recorded.
+      if (!Store.getFamilyName()) {
+        toast("Add and save your family name first", "err");
+        const inp = document.getElementById("family-name-input");
+        if (inp) {
+          inp.scrollIntoView({ block: "center", behavior: "smooth" });
+          setTimeout(() => inp.focus(), 350);
+        }
+        return;
+      }
+      memberForm();
+    } }));
     panel.appendChild(head);
 
     const members = Store.members();
     if (!members.length) {
-      panel.appendChild(el("div", { class: "panel" }, el("div", { class: "empty", text: "No members yet. Add your first family member above." })));
+      const hint = Store.getFamilyName()
+        ? "No members yet. Add your first family member above."
+        : "Save your family name in “Your household” above, then add your first family member.";
+      panel.appendChild(el("div", { class: "panel" }, el("div", { class: "empty", text: hint })));
       return;
     }
 
@@ -1984,13 +1975,14 @@
           maxlength: "64",
           autocomplete: "family-name",
         });
-        actionPanel.appendChild(el("p", { class: "help", text: "Optional: add your family name now, then begin adding members on the Dashboard." }));
-        actionPanel.appendChild(field("Family name", familyInput, "Family or surname only — for example SMY FAMILY."));
+        actionPanel.appendChild(el("p", { class: "help", text: "Add your family name to begin — it labels this household on screen, in backups, and in reports." }));
+        actionPanel.appendChild(field("Family name (required)", familyInput, "Family or surname only — for example SMY FAMILY."));
         actionPanel.appendChild(el("button", {
           class: "btn block",
           text: "Start with empty household",
           onclick: () => {
-            saveFamilyName(familyInput.value, "welcome");
+            const saved = saveFamilyName(familyInput.value, "welcome");
+            if (!saved) { toast("Enter your family name to continue", "err"); familyInput.focus(); return; }
             trackEvent("welcome_start", { choice: "fresh" });
             closeModal();
             if (typeof onDone === "function") onDone();
