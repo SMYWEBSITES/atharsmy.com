@@ -1677,21 +1677,24 @@
       toast("Currency set to " + newCur + " — updating metal rates…", "ok");
       Rates.fetchLiveRates(Store.getRates().diamond_inr_per_carat, newCur)
         .then((res) => {
-          const merged = Store.getRates();
-          let changed = false;
-          ["gold_inr_per_gram", "silver_inr_per_gram", "platinum_inr_per_gram"].forEach((k) => {
-            if (res.rates[k] > 0) { merged[k] = Math.round(res.rates[k] * 100) / 100; changed = true; }
-          });
-          if (changed) {
+          // Apply all-or-nothing: gold/silver/platinum must switch to the new
+          // currency together, otherwise a metal that failed to fetch would keep
+          // its old-currency number while being treated as the new currency —
+          // silently corrupting nisab for whichever school/holding relies on it.
+          if (res.ok) {
+            const merged = Store.getRates();
+            ["gold_inr_per_gram", "silver_inr_per_gram", "platinum_inr_per_gram"].forEach((k) => {
+              merged[k] = Math.round(res.rates[k] * 100) / 100;
+            });
             Store.setRates(merged);
             toast("Metal rates updated in " + newCur + " — verify against today's local rates", "ok");
           } else {
-            toast("Couldn't fetch rates in " + newCur + " — enter today's rates manually", "err");
+            toast("Couldn't fetch all metal rates in " + newCur + " — rates are still in the old currency; update gold, silver and platinum manually on Market Rates before trusting Nisab/eligibility", "err");
           }
           refreshAll();
         })
         .catch(() => {
-          toast("Couldn't fetch rates in " + newCur + " — enter today's rates manually (values still show the old currency's numbers)", "err");
+          toast("Couldn't fetch rates in " + newCur + " — rates are still in the old currency; update gold, silver and platinum manually on Market Rates before trusting Nisab/eligibility", "err");
         });
     } else {
       toast("Currency set to " + newCur + " — update the metal rates manually", "ok");
