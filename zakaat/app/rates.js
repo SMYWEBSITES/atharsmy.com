@@ -129,5 +129,36 @@
       });
   }
 
-  global.ZKRates = { fetchLiveRates };
+  /*
+   * Location lookup for first-run defaults (currency + help language).
+   * Uses free, key-less, CORS-enabled geo-IP endpoints; only the response's
+   * country/currency is used and nothing is stored beyond the user's choice.
+   * Returns { country, countryName, currency } or rejects when offline/blocked.
+   */
+  const GEO_PRIMARY = "https://ipapi.co/json/";
+  const GEO_FALLBACK = "https://ipwho.is/";
+
+  function detectLocation() {
+    return fetchJson(GEO_PRIMARY)
+      .then((d) => {
+        if (!d || !d.country_code) throw new Error("no location in response");
+        return {
+          country: String(d.country_code).toUpperCase(),
+          countryName: d.country_name || "",
+          currency: d.currency ? String(d.currency).toUpperCase() : "",
+        };
+      })
+      .catch(() =>
+        fetchJson(GEO_FALLBACK).then((d) => {
+          if (!d || d.success === false || !d.country_code) throw new Error("location unavailable");
+          return {
+            country: String(d.country_code).toUpperCase(),
+            countryName: d.country || "",
+            currency: d.currency && d.currency.code ? String(d.currency.code).toUpperCase() : "",
+          };
+        })
+      );
+  }
+
+  global.ZKRates = { fetchLiveRates, detectLocation };
 })(window);

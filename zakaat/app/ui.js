@@ -1664,6 +1664,68 @@
     ]);
   }
 
+  // --- Currency / language / school choosers (shared by welcome + Rates tab) ---
+
+  // Apply a currency choice everywhere: store it, switch the money formatter,
+  // re-render, and refetch metal rates in the new currency so the old
+  // currency's numbers don't linger.
+  function applyCurrencyChange(newCur) {
+    Store.setCurrency(newCur);
+    ZK.setDisplayCurrency(newCur);
+    refreshAll();
+    if (Rates) {
+      toast("Currency set to " + newCur + " — updating metal rates…", "ok");
+      Rates.fetchLiveRates(Store.getRates().diamond_inr_per_carat, newCur)
+        .then((res) => {
+          const merged = Store.getRates();
+          let changed = false;
+          ["gold_inr_per_gram", "silver_inr_per_gram", "platinum_inr_per_gram"].forEach((k) => {
+            if (res.rates[k] > 0) { merged[k] = Math.round(res.rates[k] * 100) / 100; changed = true; }
+          });
+          if (changed) {
+            Store.setRates(merged);
+            toast("Metal rates updated in " + newCur + " — verify against today's local rates", "ok");
+          } else {
+            toast("Couldn't fetch rates in " + newCur + " — enter today's rates manually", "err");
+          }
+          refreshAll();
+        })
+        .catch(() => {
+          toast("Couldn't fetch rates in " + newCur + " — enter today's rates manually (values still show the old currency's numbers)", "err");
+        });
+    } else {
+      toast("Currency set to " + newCur + " — update the metal rates manually", "ok");
+    }
+  }
+
+  function currencySelectNode() {
+    const cur = curCode();
+    return el("select", null, ZK.CURRENCIES.map((c) =>
+      el("option", { value: c[0], selected: c[0] === cur ? "selected" : null, text: c[0] + " — " + c[1] })));
+  }
+
+  function madhabSelectNode() {
+    const madhab = Store.getMadhab();
+    return el("select", null, Object.keys(ZK.MADHAB_RULES).map((k) =>
+      el("option", { value: k, selected: k === madhab ? "selected" : null, text: ZK.MADHAB_RULES[k].label })));
+  }
+
+  // Help-language select for the current currency (English + matching languages).
+  function helpLangSelectNode() {
+    if (!Help) return null;
+    const langs = Help.availableLangs();
+    const sel = el("select", null, langs.map((code) =>
+      el("option", { value: code, selected: code === Help.effectiveLang() ? "selected" : null, text: Help.LANG_LABELS[code] })));
+    sel.addEventListener("change", () => { Help.setLang(sel.value); Help.refresh(); });
+    return sel;
+  }
+
+  // Resolve a supported currency from a geo-IP result ("" when none).
+  function currencyFromLocation(loc) {
+    if (loc.currency && ZK.isKnownCurrency(loc.currency)) return loc.currency;
+    return ZK.currencyForRegion(loc.country);
+  }
+
   // --- Rates ---
   function renderRates() {
     const panel = document.getElementById("tab-rates");
@@ -1677,6 +1739,10 @@
     const madhabSel = el("select", null, Object.keys(ZK.MADHAB_RULES).map((k) => el("option", { value: k, selected: k === madhab ? "selected" : null, text: ZK.MADHAB_RULES[k].label })));
     madhabSel.addEventListener("change", () => { Store.setMadhab(madhabSel.value); toast("School updated", "ok"); refreshAll(); });
     mp.appendChild(field("School", madhabSel));
+    const rateLangSel = helpLangSelectNode();
+    if (rateLangSel) {
+      mp.appendChild(field("Form help language", rateLangSel, "Language of the guidance text inside forms. Options follow the selected currency."));
+    }
     panel.appendChild(mp);
 
     const rp = el("div", { class: "panel" });
@@ -1684,41 +1750,29 @@
     rp.appendChild(el("p", { class: "sub", html: "Enter rates manually, or fetch live spot prices from the internet. The app stays in your browser \u2014 fetching is optional and only happens when you click below." }));
 
     const cur = curCode();
-    const curSel = el("select", null, ZK.CURRENCIES.map((c) =>
-      el("option", { value: c[0], selected: c[0] === cur ? "selected" : null, text: c[0] + " \u2014 " + c[1] })));
-    curSel.addEventListener("change", () => {
-      const newCur = curSel.value;
-      Store.setCurrency(newCur);
-      ZK.setDisplayCurrency(newCur);
-      refreshAll();
-      // Currency and metal rates stay linked: refetch spot prices in the new
-      // currency right away so the old currency's numbers don't linger.
-      if (Rates) {
-        toast("Currency set to " + newCur + " \u2014 updating metal rates\u2026", "ok");
-        Rates.fetchLiveRates(Store.getRates().diamond_inr_per_carat, newCur)
-          .then((res) => {
-            const merged = Store.getRates();
-            let changed = false;
-            ["gold_inr_per_gram", "silver_inr_per_gram", "platinum_inr_per_gram"].forEach((k) => {
-              if (res.rates[k] > 0) { merged[k] = Math.round(res.rates[k] * 100) / 100; changed = true; }
-            });
-            if (changed) {
-              Store.setRates(merged);
-              toast("Metal rates updated in " + newCur + " \u2014 verify against today's local rates", "ok");
-            } else {
-              toast("Couldn't fetch rates in " + newCur + " \u2014 enter today's rates manually", "err");
-            }
-            refreshAll();
-          })
-          .catch(() => {
-            toast("Couldn't fetch rates in " + newCur + " \u2014 enter today's rates manually (values still show the old currency's numbers)", "err");
-          });
-      } else {
-        toast("Currency set to " + newCur + " \u2014 update the metal rates manually", "ok");
-      }
-    });
+    const curSel = currencySelectNode();
+    curSel.addEventListener("change", () => applyCurrencyChange(curSel.value));
     rp.appendChild(field("Currency", curSel));
-    rp.appendChild(el("div", { class: "help", text: "Detected from your device's locale on first use \u2014 change it here if that guess is wrong. Changing it refetches today's metal rates in the new currency; asset values and diamond rates you entered are not converted." }));
+    rp.appendChild(el("div", { class: "help", text: "Detected from your device's locale/location on first use \u2014 change it here if that guess is wrong. Changing it refetches today's metal rates in the new currency; asset values and diamond rates you entered are not converted." }));
+    if (Rates && Rates.detectLocation) {
+      const detectBtn = el("button", { class: "link", text: "Detect currency from my location" });
+      detectBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        detectBtn.textContent = "Checking your location\u2026";
+        detectBtn.disabled = true;
+        Rates.detectLocation()
+          .then((loc) => {
+            const found = currencyFromLocation(loc);
+            if (!found) { toast("Couldn't map " + (loc.countryName || loc.country || "your location") + " to a supported currency", "err"); return; }
+            if (found === curCode()) { toast("Already using " + found + (loc.countryName ? " (" + loc.countryName + ")" : ""), "ok"); return; }
+            applyCurrencyChange(found);
+            toast("Location: " + (loc.countryName || loc.country) + " \u2014 currency set to " + found, "ok");
+          })
+          .catch(() => toast("Couldn't check your location \u2014 pick the currency manually", "err"))
+          .finally(() => { detectBtn.textContent = "Detect currency from my location"; detectBtn.disabled = false; renderRates(); });
+      });
+      rp.appendChild(el("div", { class: "btn-row" }, detectBtn));
+    }
 
     rp.appendChild(el("div", { class: "notice warn", text: "Live rates are wholesale spot prices converted from USD markets. They can differ from your local jeweller's or bank's rate for the day \u2014 please check today's metal prices in your area and update the values below if needed." }));
 
@@ -2068,11 +2122,64 @@
       });
     });
 
+    // --- Region & preferences: shown on the very first screen so newcomers
+    // pick currency, help language and school without hunting for the Rates
+    // tab (the same controls stay available there too). ---
+    const prefCur = currencySelectNode();
+    const prefLangWrap = el("span", { class: "pref-lang-wrap" });
+    const prefMadhab = madhabSelectNode();
+    let curTouched = false;
+
+    function renderPrefLang() {
+      clear(prefLangWrap);
+      const sel = helpLangSelectNode();
+      if (sel) prefLangWrap.appendChild(sel);
+    }
+    renderPrefLang();
+
+    prefCur.addEventListener("change", () => {
+      curTouched = true;
+      applyCurrencyChange(prefCur.value);
+      renderPrefLang();
+    });
+    prefMadhab.addEventListener("change", () => { Store.setMadhab(prefMadhab.value); refreshAll(); });
+
+    const detectNote = el("div", { class: "help", text: "Guessed from your device — checking your location…" });
+    const prefsPanel = el("div", { class: "welcome-prefs" }, [
+      el("div", { class: "welcome-prefs-title", text: "Currency, language & school" }),
+      el("div", { class: "field-row3" }, [
+        field("Currency", prefCur),
+        el("div", { class: "field" }, [el("label", { text: "Form help language" }), prefLangWrap]),
+        field("School (madhhab)", prefMadhab),
+      ]),
+      detectNote,
+    ]);
+
+    if (Rates && Rates.detectLocation) {
+      Rates.detectLocation()
+        .then((loc) => {
+          const found = currencyFromLocation(loc);
+          const where = loc.countryName || loc.country || "your location";
+          if (!found) { detectNote.textContent = "Location: " + where + " — keeping " + curCode() + ". Change it above if needed."; return; }
+          if (!curTouched && found !== curCode()) {
+            prefCur.value = found;
+            applyCurrencyChange(found);
+            renderPrefLang();
+          }
+          detectNote.textContent = "Detected from your location: " + where + " → " + found + ". Change it above if that's wrong.";
+          trackEvent("welcome_geo_detect", { country: loc.country || "", currency: found });
+        })
+        .catch(() => { detectNote.textContent = "Couldn't check your location — pick your currency above."; });
+    } else {
+      detectNote.textContent = "Guessed from your device's locale — change it above if that's wrong.";
+    }
+
     const body = el("div", { class: "welcome-body" }, [
       el("p", {
         class: "sub",
         text: "Your Zakat data stays in this browser until you choose to open or back up a file. Pick how you would like to begin — Google Drive is only used if you select that option.",
       }),
+      prefsPanel,
       choices,
       actionPanel,
     ]);

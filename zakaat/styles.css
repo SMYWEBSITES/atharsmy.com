@@ -813,3 +813,25 @@ td.num.neg { color: var(--red-600); }
 .cat-explainer:empty { display: none; }
 /* RTL help lines (Urdu/Arabic) read right-to-left within the same layout */
 .help[dir="rtl"], .form-intro[dir="rtl"], .cat-explainer[dir="rtl"] { text-align: right; }
+
+/* --- Welcome: region & preferences chooser --- */
+.welcome-prefs {
+  background: var(--emerald-50);
+  border: 1px solid var(--emerald-100);
+  border-radius: 12px;
+  padding: 14px 16px 6px;
+  margin-bottom: 18px;
+}
+.welcome-prefs-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--emerald-800);
+  margin-bottom: 10px;
+}
+.welcome-prefs .help { margin: 2px 0 10px; }
+.field-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.field-row3 .field { margin-bottom: 8px; }
+.pref-lang-wrap select { width: 100%; }
+@media (max-width: 640px) {
+  .field-row3 { grid-template-columns: 1fr; }
+}

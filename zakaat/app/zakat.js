@@ -930,6 +930,15 @@
     return "INR";
   }
 
+  // Map an ISO country code to a supported currency ("" when unknown).
+  function currencyForRegion(region) {
+    return REGION_CURRENCY[String(region || "").toUpperCase()] || "";
+  }
+
+  function isKnownCurrency(code) {
+    return !!KNOWN_CURRENCY[String(code || "").toUpperCase()];
+  }
+
   let displayCurrency = "INR";
   let moneyFmt = null;
 
@@ -995,7 +1004,7 @@
     // calendar
     zakatAsOf, currentZakatBaselineDate, nextZakatBaselineDate, formatHijriDate, hijriParts, todayUTC,
     // currency
-    CURRENCIES, detectCurrency, setDisplayCurrency, getDisplayCurrency, currencySymbol,
+    CURRENCIES, detectCurrency, currencyForRegion, isKnownCurrency, setDisplayCurrency, getDisplayCurrency, currencySymbol,
     // format
     fmtINR, fmtGrams, fmtDate, num,
   });
