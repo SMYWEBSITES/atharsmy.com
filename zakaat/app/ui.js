@@ -10,6 +10,7 @@
   const Rates = global.ZKRates;
   const History = global.ZKHistory;
   const Drive = global.ZKDrive;
+  const Help = global.ZKHelp;
   let baseline = null;
   let yearlySelected = null; // selected calendar year on the Yearly Review tab
 
@@ -1325,12 +1326,53 @@
   }
 
   // --- Member form ---
+  // --- Inline help (plain-language, translatable) ---
+  // helpNode(key) -> a div bound to a ZKHelp string; ZKHelp.refresh() re-translates
+  // every bound node in place, so switching language never loses typed values.
+  function helpNode(key, cls) {
+    const d = el("div", { class: cls || "help" });
+    if (Help) Help.bind(d, key);
+    return d;
+  }
+
+  // field() + a translated help line under the input.
+  function fieldK(label, inputNode, helpKey) {
+    const f = field(label, inputNode);
+    if (Help) f.appendChild(helpNode(helpKey));
+    return f;
+  }
+
+  // Language pills for the help text (English + languages matching the selected
+  // currency, e.g. INR -> Urdu/Hindi). Hidden when only English applies.
+  function helpLangBar() {
+    if (!Help) return null;
+    const langs = Help.availableLangs();
+    if (langs.length < 2) return null;
+    const bar = el("div", { class: "help-lang" });
+    function renderPills() {
+      clear(bar);
+      bar.appendChild(el("span", { class: "help-lang-label", text: "Help language:" }));
+      langs.forEach((code) => {
+        bar.appendChild(el("button", {
+          type: "button",
+          class: "help-lang-pill" + (Help.effectiveLang() === code ? " active" : ""),
+          text: Help.LANG_LABELS[code],
+          onclick: () => { Help.setLang(code); Help.refresh(); renderPills(); },
+        }));
+      });
+    }
+    renderPills();
+    return bar;
+  }
+
   function memberForm(existing) {
     const name = el("input", { type: "text", value: existing ? existing.name : "", placeholder: "Full name, e.g. Altamash" });
     const rel = el("input", { type: "text", value: existing ? existing.relationship : "", placeholder: "Relationship, e.g. Self, Spouse, Son" });
     const body = el("form", null, [
-      field("Name", name),
-      field("Relationship", rel),
+      helpLangBar(),
+      helpNode("member_intro", "form-intro"),
+      fieldK("Name", name, "member_name"),
+      fieldK("Relationship", rel, "member_rel"),
     ]);
     const save = el("button", { class: "btn", text: existing ? "Save" : "Add member", onclick: (e) => {
       e.preventDefault();
@@ -1398,20 +1440,27 @@
     const preview = el("div", { class: "preview" });
 
     // Field containers
+    const valueHelp = helpNode("asset_value");
     const fValuation = field("Value (" + curCode() + ")", valuation);
-    const fWeight = field("Gross weight (grams)", weight);
-    const fPurity = field("Karat (purity)", puritySelect);
-    const fPurityCustom = field("Custom purity", purityCustom, "Enter karat, fineness, % or decimal fraction.");
-    const fCarats = field("Carats", carats, "Diamond weight in carats. Leave value blank to auto-price from carats.");
+    fValuation.appendChild(valueHelp);
+    const fWeight = fieldK("Gross weight (grams)", weight, "asset_weight");
+    const fPurity = fieldK("Karat (purity)", puritySelect, "asset_purity");
+    const fPurityCustom = fieldK("Custom purity", purityCustom, "asset_purity_custom");
+    const fCarats = fieldK("Carats", carats, "asset_carats");
+    const subtypeHelp = helpNode("asset_subtype_property");
     const fSubtype = field("Type", subtype);
-    const fQuantity = field("Head count", quantity);
+    fSubtype.appendChild(subtypeHelp);
+    const fQuantity = fieldK("Head count", quantity, "asset_quantity");
     const fJewelry = el("div", { class: "field" }, el("label", { class: "checkbox-field" }, [jewelry, el("span", { text: " Personal jewelry (exempt in Shafi'i/Maliki/Hanbali)" })]));
-    const fBalanceAsOf = field("Balance as of date", balanceAsOf, "Date of the PF balance entered above.");
-    const fEmp = field("Employee monthly (" + curCode() + ")", empMonthly);
-    const fEr = field("Employer monthly (" + curCode() + ")", erMonthly);
-    const fRate = field("Annual interest rate (%)", annualRate);
-    const fHawl = field("Hawl start date", hawlStart, "When you began holding this wealth (for the 1-lunar-year rule). Optional.");
-    const fAcq = field("Acquired year", acquiredYear);
+    if (Help) fJewelry.appendChild(helpNode("asset_jewelry"));
+    const fBalanceAsOf = fieldK("Balance as of date", balanceAsOf, "asset_pf_asof");
+    const fEmp = fieldK("Employee monthly (" + curCode() + ")", empMonthly, "asset_pf_monthly");
+    const fEr = fieldK("Employer monthly (" + curCode() + ")", erMonthly, "asset_pf_monthly");
+    const fRate = fieldK("Annual interest rate (%)", annualRate, "asset_pf_rate");
+    const fHawl = fieldK("Hawl start date", hawlStart, "asset_hawl");
+    const fAcq = fieldK("Acquired year", acquiredYear, "asset_acquired");
+    // Plain-words explainer for the selected category, updated on change.
+    const catExplainer = el("div", { class: "cat-explainer" });
     const grpMetal = el("div", { class: "field-group field-metal" }, [fWeight, fPurity, fPurityCustom]);
     const grpDiamond = el("div", { class: "field-group field-diamond" }, [fCarats]);
     const grpSubtype = el("div", { class: "field-group field-subtype" }, [fSubtype]);
@@ -1474,6 +1523,15 @@
       show(fValuation, !isMetalWeight);
       if (isMetalWeight) syncPurityFields(c);
       if (hasSubtype) setSubtypeOptions(c);
+      // Swap the plain-language guidance to match the category.
+      if (Help) {
+        Help.bind(catExplainer, "cat_" + c);
+        Help.bind(valueHelp, isPF ? "asset_pf_balance" : "asset_value");
+        if (hasSubtype) {
+          Help.bind(subtypeHelp, c === "Property" ? "asset_subtype_property"
+            : c === "Agriculture" ? "asset_subtype_agri" : "asset_subtype_livestock");
+        }
+      }
       updatePreview();
     }
 
@@ -1507,12 +1565,15 @@
     cat.addEventListener("change", updateVisibility);
 
     const body = el("form", null, [
-      field("Category", cat),
-      field("Description", desc),
+      helpLangBar(),
+      helpNode("intro_zakat", "form-intro"),
+      fieldK("Category", cat, "asset_category"),
+      catExplainer,
+      fieldK("Description", desc, "asset_desc"),
       fValuation,
       grpMetal, grpDiamond, grpSubtype, grpQuantity, grpPf, grpHawl,
       fJewelry,
-      field("Photo (optional)", imageInput, "Stored locally in your browser and included in Excel backups."),
+      fieldK("Photo (optional)", imageInput, "asset_photo"),
       imagePreview,
       preview,
     ]);
@@ -1585,7 +1646,12 @@
   function paymentForm(memberId, existing) {
     const given = el("input", { type: "text", value: existing ? existing.given_to || "" : "", placeholder: "Who received it, e.g. Local masjid" });
     const amount = el("input", { type: "number", step: "0.01", value: existing && existing.amount_inr != null ? existing.amount_inr : "", placeholder: "Amount" });
-    const body = el("form", null, [field("Given to", given), field("Amount (" + curCode() + ")", amount)]);
+    const body = el("form", null, [
+      helpLangBar(),
+      helpNode("pay_intro", "form-intro"),
+      fieldK("Given to", given, "pay_given"),
+      fieldK("Amount (" + curCode() + ")", amount, "pay_amount"),
+    ]);
     const save = el("button", { class: "btn", text: existing ? "Save payment" : "Add payment", onclick: (e) => {
       e.preventDefault();
       if (!given.value.trim() || ZK.num(amount.value) <= 0) { toast("Enter recipient and amount", "err"); return; }
