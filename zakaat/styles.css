@@ -863,3 +863,80 @@ td.num.neg { color: var(--red-600); }
 @media (max-width: 640px) {
   .field-row3 { grid-template-columns: 1fr; }
 }
+
+/* --- Getting Started card --- */
+.getting-started { border: 1px solid var(--emerald-200); background: var(--emerald-50); }
+.gs-steps { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.gs-step {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 14px; border-radius: 10px;
+  background: #fff; border: 1px solid var(--slate-100);
+  transition: background 0.15s;
+}
+.gs-step-done { background: var(--emerald-50); border-color: var(--emerald-100); }
+.gs-icon {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; line-height: 1;
+}
+.gs-todo { background: var(--slate-100); color: var(--slate-500); }
+.gs-done { background: var(--emerald-500); color: #fff; }
+.gs-text { flex: 1; font-size: 14px; line-height: 1.5; color: var(--slate-700); padding-top: 3px; }
+.gs-step-done .gs-text { color: var(--slate-500); }
+.gs-note { font-size: 12px; color: var(--slate-400); display: block; margin-top: 2px; }
+.gs-step[data-clickable] { cursor: pointer; }
+.gs-step[data-clickable]:hover { background: var(--emerald-50); border-color: var(--emerald-200); }
+@media (prefers-color-scheme: dark) {
+  .getting-started { border-color: #1a3a2a; background: #0f2a1a; }
+  .gs-step { background: #1a2a1a; border-color: #2a3a2a; }
+  .gs-step-done { background: #0f2a1a; border-color: #1a3a2a; }
+  .gs-todo { background: #2a3a2a; color: #94a3b8; }
+  .gs-done { background: var(--emerald-600); }
+  .gs-text { color: #cbd5e1; }
+  .gs-step-done .gs-text { color: #64748b; }
+  .gs-note { color: #475569; }
+}
+
+/* --- Nisab eligibility gauge --- */
+.nisab-gauge { margin-top: 18px; padding: 14px 16px; border: 1px solid var(--slate-200); border-radius: 12px; background: var(--slate-50); }
+.nisab-gauge-header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.nisab-gauge-title { font-size: 13px; font-weight: 600; color: var(--slate-600); }
+.nisab-gauge-vals { font-size: 12px; color: var(--slate-400); font-variant-numeric: tabular-nums; }
+.nisab-track { height: 8px; border-radius: 999px; background: var(--slate-200); overflow: hidden; position: relative; }
+.nisab-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+.nisab-fill-under { background: var(--amber-400); }
+.nisab-fill-over { background: var(--emerald-500); }
+.nisab-gauge-note { margin-top: 7px; font-size: 12px; font-weight: 500; }
+.nisab-note-over { color: var(--emerald-700); }
+.nisab-note-under { color: var(--amber-700); }
+@media (prefers-color-scheme: dark) {
+  .nisab-gauge { border-color: #2a3a4a; background: #0f1a2a; }
+  .nisab-track { background: #2a3a4a; }
+  .nisab-gauge-title { color: #94a3b8; }
+  .nisab-gauge-vals { color: #64748b; }
+}
+
+/* --- Asset discovery checklist modal --- */
+.checklist-body { display: flex; flex-direction: column; gap: 1px; }
+.checklist-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 4px; border-bottom: 1px solid var(--slate-100);
+}
+.checklist-row:last-child { border-bottom: none; }
+.checklist-info { flex: 1; }
+.checklist-label { font-size: 14px; font-weight: 600; color: var(--slate-800); line-height: 1.4; }
+.checklist-hint { font-size: 12px; color: var(--slate-500); margin-top: 2px; line-height: 1.4; }
+.checklist-row .btn { flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 640px) {
+  .checklist-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .checklist-row .btn { align-self: flex-end; }
+}
+@media (prefers-color-scheme: dark) {
+  .checklist-row { border-bottom-color: #2a3a2a; }
+  .checklist-label { color: #cbd5e1; }
+  .checklist-hint { color: #64748b; }
+}
+
+/* --- Hawl status badge on asset rows --- */
+.hawl-badge { margin-left: 6px; vertical-align: middle; font-size: 10px; }
+.pill.amber-sm { background: var(--amber-100); color: var(--amber-700); font-size: 10px; padding: 1px 6px; }

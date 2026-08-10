@@ -381,6 +381,127 @@
     node.textContent = name ? name + " family" : "";
   }
 
+  // --- Getting Started card (always visible; checks update as the user progresses) ---
+  function renderGettingStartedCard(panel) {
+    const members = Store.members();
+    const hasFamily  = !!Store.getFamilyName();
+    const hasMembers = members.length > 0;
+    const hasAssets  = members.some((m) => (m.assets || []).length > 0);
+
+    const steps = [
+      {
+        label: "Save your family name",
+        done: hasFamily,
+        click: () => {
+          const inp = document.getElementById("family-name-input");
+          if (inp) { inp.scrollIntoView({ block: "center", behavior: "smooth" }); setTimeout(() => inp.focus(), 350); }
+        },
+      },
+      {
+        label: "Choose currency, language & school",
+        note: "Use the preferences panel below",
+        done: true, // always reachable
+      },
+      {
+        label: "Add yourself (or your family) as a member",
+        done: hasMembers,
+        click: hasFamily ? () => memberForm() : null,
+      },
+      {
+        label: "Tap “What do I own?” to add your first asset",
+        note: "Open any member section → What do I own?",
+        done: hasAssets,
+      },
+      {
+        label: "See your Zakat amount in the summary below",
+        note: "It updates as you add assets",
+        done: hasAssets,
+      },
+    ];
+
+    const stepEls = steps.map((s, i) => {
+      const icon = el("span", { class: "gs-icon " + (s.done ? "gs-done" : "gs-todo"), text: s.done ? "✓" : String(i + 1) });
+      const textWrap = el("div", { class: "gs-text" }, [el("span", { text: s.label })]);
+      if (s.note) textWrap.appendChild(el("span", { class: "gs-note", text: s.note }));
+      const row = el("div", { class: "gs-step" + (s.done ? " gs-step-done" : "") }, [icon, textWrap]);
+      if (s.click && !s.done) {
+        row.setAttribute("data-clickable", "1");
+        row.addEventListener("click", s.click);
+      }
+      return row;
+    });
+
+    const card = el("div", { class: "panel getting-started" });
+    card.appendChild(el("h2", { text: "Getting started" }));
+    card.appendChild(el("p", { class: "sub", text: "New to Zakat? Follow these five steps. Completed steps turn green automatically." }));
+    card.appendChild(el("div", { class: "gs-steps" }, stepEls));
+    panel.appendChild(card);
+  }
+
+  // --- Nisab gauge --- shows zakatable wealth vs threshold as a progress bar ---
+  function renderNisabGauge(container, household) {
+    if (!household.members.length) return;
+    const totalZakatable = household.members.reduce((s, m) => s + m.nisab_wealth_inr, 0);
+    const threshold      = household.members[0].nisab_threshold_inr;
+    const basis          = household.members[0].nisab_basis;
+    if (threshold <= 0) return;
+
+    const pct     = Math.min(100, (totalZakatable / threshold) * 100);
+    const eligible = pct >= 100;
+
+    const gauge = el("div", { class: "nisab-gauge" });
+    gauge.appendChild(el("div", { class: "nisab-gauge-header" }, [
+      el("span", { class: "nisab-gauge-title", text: "Zakatable wealth vs nisab (" + basis + " basis)" }),
+      el("span", { class: "nisab-gauge-vals", text: ZK.fmtINR(totalZakatable) + " of " + ZK.fmtINR(threshold) }),
+    ]));
+    gauge.appendChild(el("div", { class: "nisab-track" },
+      el("div", { class: "nisab-fill " + (eligible ? "nisab-fill-over" : "nisab-fill-under"), style: "width:" + pct.toFixed(1) + "%" })
+    ));
+    gauge.appendChild(el("div", {
+      class: "nisab-gauge-note " + (eligible ? "nisab-note-over" : "nisab-note-under"),
+      text: eligible
+        ? "✓ Above nisab — Zakat is due at 2.5% on your zakatable wealth"
+        : "Below nisab — no Zakat due yet (" + Math.ceil(100 - pct) + "% of threshold to go)",
+    }));
+    container.appendChild(gauge);
+  }
+
+  // --- Asset discovery checklist ---
+  const ASSET_CHECKLIST = [
+    { label: "Bank savings, fixed deposits, or cash at home",   hint: "All savings accounts, current accounts, FDs, digital wallets, cash in hand.", category: "Cash" },
+    { label: "Gold — jewelry, coins, or bars",            hint: "Any gold you own. Personal jewelry may be exempt in Shafiʿi / Maliki / Hanbali.", category: "Gold" },
+    { label: "Silver — jewelry, coins, or utensils",       hint: "Silver cutlery, coins, jewelry.", category: "Silver" },
+    { label: "Stocks, mutual funds, or shares",                 hint: "Any equity investments. Enter today’s total portfolio value.", category: "Stocks" },
+    { label: "Provident fund / EPF / PPF",                      hint: "Enter the balance from your last PF statement — the app projects it to today.", category: "PF" },
+    { label: "Business goods or inventory",                     hint: "Stock you keep for sale, and business cash. Not the shop building or machines.", category: "Business" },
+    { label: "Your share in a joint business or partnership",   hint: "The current value of your stake.", category: "Partnership" },
+    { label: "Property you are planning to sell",               hint: "Only ‘for sale’ property counts. Your home and rental buildings are exempt.", category: "Property", subtype: "trade" },
+    { label: "Loans or debts you owe to others",                hint: "Reduces your zakatable wealth (degree depends on your school).", category: "Liabilities" },
+  ];
+
+  function showAssetChecklist(memberId) {
+    const rows = ASSET_CHECKLIST.map((item) => {
+      const row = el("div", { class: "checklist-row" }, [
+        el("div", { class: "checklist-info" }, [
+          el("div", { class: "checklist-label", text: item.label }),
+          el("div", { class: "checklist-hint", text: item.hint }),
+        ]),
+        el("button", {
+          class: "btn sm",
+          text: "Add this",
+          onclick: () => {
+            closeModal();
+            assetForm(memberId, null, item.category, item.subtype);
+          },
+        }),
+      ]);
+      return row;
+    });
+    openModal("What do I own?", el("div", { class: "checklist-body" }, rows), [
+      el("button", { class: "btn secondary", text: "Close", onclick: closeModal }),
+    ], { wide: true });
+  }
+
   function renderFamilyNamePanel(panel) {
     const nameInput = el("input", {
       type: "text",
@@ -505,6 +626,7 @@
       ]),
     ]);
     panel.appendChild(hero);
+    renderGettingStartedCard(panel);
     renderFamilyNamePanel(panel);
     renderPreferencesPanel(panel);
 
@@ -527,6 +649,7 @@
       card(Help.t("card_remaining"), ZK.fmtINR(Math.max(0, household.total_remaining_inr)), household.total_remaining_inr > 0.005 ? "warn" : ""),
     ]);
     summaryPanel.appendChild(cards);
+    renderNisabGauge(summaryPanel, household);
     panel.appendChild(summaryPanel);
 
     // Baseline projections and the per-member table live on Analytics;
@@ -1264,19 +1387,42 @@
       body.appendChild(memberBreakdownNode(summary));
 
       // Assets
-      body.appendChild(el("div", { class: "member-section-title", text: "Assets" }));
+      const assetTitleRow = el("div", { class: "member-section-title", style: "display:flex;align-items:center;justify-content:space-between;gap:10px" }, [
+        el("span", { text: "Assets" }),
+        el("button", {
+          class: "btn sm",
+          text: "✦ What do I own?",
+          onclick: () => showAssetChecklist(m.id),
+        }),
+      ]);
+      body.appendChild(assetTitleRow);
       if (!(m.assets || []).length) {
-        body.appendChild(el("div", { class: "muted", style: "font-size:13px", text: "No assets recorded." }));
+        body.appendChild(el("div", { class: "muted", style: "font-size:13px;margin-top:6px", text: "No assets yet. Tap “What do I own?” to find out what counts toward Zakat, or use “Add asset” above." }));
       } else {
         const rows = m.assets.map((a) => {
           const val = ZK.effectiveValuationInr(a, rates, baseline);
           const detail = assetDetail(a);
           const thumb = a.image ? el("img", { class: "asset-thumb", src: a.image, alt: "" }) : null;
           const descCell = el("td", null, [thumb, document.createTextNode((thumb ? " " : "") + (a.description || a.category))]);
+          // Hawl badge — only for categories that require hawl (not Agriculture / Rikaz)
+          const needsHawl = a.category !== "Agriculture" && a.category !== "Rikaz";
+          let hawlBadge = null;
+          if (needsHawl) {
+            const complete = ZK.hawlComplete(a, baseline);
+            const daysLeft = complete ? 0 : ZK.hawlDaysRemaining(a, baseline);
+            hawlBadge = el("span", {
+              class: "pill " + (complete ? "green" : "amber") + " hawl-badge",
+              text: complete ? "✓ Hawl" : daysLeft + "d to hawl",
+              title: complete ? "Hawl complete — this asset is eligible" : daysLeft + " days until this asset completes one lunar year",
+            });
+          }
+          const detailCell = el("td", { class: "muted" });
+          if (detail) detailCell.appendChild(document.createTextNode(detail));
+          if (hawlBadge) detailCell.appendChild(hawlBadge);
           return el("tr", null, [
             el("td", null, el("span", { class: "pill gray", text: a.category })),
             descCell,
-            el("td", { class: "muted", text: detail }),
+            detailCell,
             el("td", { class: "num", text: ZK.fmtINR(val) }),
             el("td", { class: "num" }, el("div", { class: "table-actions" }, [
               el("button", { class: "btn-ghost sm", text: "Edit", onclick: () => assetForm(m.id, a) }),
@@ -1427,7 +1573,7 @@
   }
 
   // --- Asset form ---
-  function assetForm(memberId, existing) {
+  function assetForm(memberId, existing, preCategory, preSubtype) {
     const rates = Store.getRates();
     const cat = el("select");
     ZK.CATEGORY_GROUPS.forEach((grp) => {
@@ -1435,7 +1581,7 @@
       grp[1].forEach((c) => og.appendChild(el("option", { value: c, selected: existing && existing.category === c ? "selected" : null, text: c })));
       cat.appendChild(og);
     });
-    if (!existing) cat.value = "Cash";
+    if (!existing) cat.value = preCategory || "Cash";
     else if (existing.category) cat.value = existing.category;
 
     const desc = el("input", { type: "text", value: existing ? existing.description || "" : "", placeholder: "Short label, e.g. Savings account or Gold chain" });
@@ -1620,6 +1766,11 @@
 
     setSubtypeOptions(cat.value);
     updateVisibility();
+    // Apply checklist pre-selection (e.g. Property → trade subtype).
+    if (!existing && preSubtype && subtype.querySelector("option[value='" + preSubtype + "']")) {
+      subtype.value = preSubtype;
+      updatePreview();
+    }
 
     const save = el("button", { class: "btn", text: existing ? "Save asset" : "Add asset", onclick: (e) => {
       e.preventDefault();
