@@ -1378,7 +1378,8 @@
       const head = el("div", { class: "member-head" }, [
         headToggle,
         el("div", { class: "member-actions" }, [
-          el("button", { class: "btn sm secondary", text: "Add payment", onclick: () => paymentForm(m.id) }),
+          el("button", { class: "btn sm", text: "✦ What do I own?", onclick: () => showAssetChecklist(m.id) }),
+          el("button", { class: "btn sm secondary", text: "Zakat given", onclick: () => paymentForm(m.id) }),
           el("button", { class: "btn-ghost sm", text: "Edit", onclick: () => memberForm(m) }),
           el("button", {
             class: "btn-ghost sm danger-text",
@@ -1402,15 +1403,7 @@
       body.appendChild(memberBreakdownNode(summary));
 
       // Assets
-      const assetTitleRow = el("div", { class: "member-section-title", style: "display:flex;align-items:center;justify-content:space-between;gap:10px" }, [
-        el("span", { text: "Assets" }),
-        el("button", {
-          class: "btn sm",
-          text: "✦ What do I own?",
-          onclick: () => showAssetChecklist(m.id),
-        }),
-      ]);
-      body.appendChild(assetTitleRow);
+      body.appendChild(el("div", { class: "member-section-title", text: "Assets" }));
       if (!(m.assets || []).length) {
         body.appendChild(el("div", { class: "muted", style: "font-size:13px;margin-top:6px", text: "No assets yet. Tap “What do I own?” to find out what counts toward Zakat." }));
       } else {
