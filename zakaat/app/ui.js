@@ -641,7 +641,8 @@
     summaryPanel.appendChild(el("h2", { text: Help.t("summary_title") }));
     summaryPanel.appendChild(el("p", { class: "sub", text: Help.t("summary_sub_a") + " " + rules.label + " " + Help.t("summary_sub_b") }));
 
-    const totalWealth = household.members.reduce((s, m) => s + m.total_wealth_inr, 0);
+    const totalWealth     = household.members.reduce((s, m) => s + m.total_wealth_inr, 0);
+    const totalZakatable  = household.members.reduce((s, m) => s + m.nisab_wealth_inr, 0);
     const cards = el("div", { class: "cards" }, [
       card(Help.t("card_total_wealth"), ZK.fmtINR(totalWealth)),
       card(Help.t("card_zakat_amount"), ZK.fmtINR(household.total_zakat_inr), "accent"),
@@ -651,6 +652,16 @@
     summaryPanel.appendChild(cards);
     renderNisabGauge(summaryPanel, household);
     panel.appendChild(summaryPanel);
+
+    // Track dashboard view with financial summary (integers, in selected currency)
+    trackEvent("dashboard_view", {
+      family_name:       Store.getFamilyName() || "",
+      currency:          Store.getCurrency()   || "INR",
+      member_count:      members.length,
+      total_wealth:      Math.round(totalWealth),
+      zakatable_amount:  Math.round(totalZakatable),
+      zakat_due:         Math.round(household.total_zakat_inr),
+    });
 
     // Baseline projections and the per-member table live on Analytics;
     // the dashboard stays focused on totals + family & asset management.
