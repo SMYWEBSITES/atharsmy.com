@@ -5,15 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <meta name="theme-color" content="#0a1a1a" />
   <meta name="description" content="Household Zakat Calculator — offline-first zakat calculation for the Athar family." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Zakat" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <link rel="manifest" href="manifest.json" />
   <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin-allow-popups" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; img-src 'self' data: blob: https://www.google-analytics.com https://www.googletagmanager.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.gold-api.com https://api.frankfurter.dev https://open.er-api.com https://freegoldapi.com https://ipapi.co https://ipwho.is https://www.googleapis.com https://accounts.google.com https://www.googletagmanager.com https://www.google-analytics.com https://region1.google-analytics.com https://region2.google-analytics.com https://analytics.google.com; frame-src https://accounts.google.com" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; img-src 'self' data: blob: https://www.google-analytics.com https://www.googletagmanager.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.gold-api.com https://api.frankfurter.dev https://open.er-api.com https://freegoldapi.com https://ipapi.co https://ipwho.is https://www.googleapis.com https://accounts.google.com https://www.googletagmanager.com https://www.google-analytics.com https://region1.google-analytics.com https://region2.google-analytics.com https://analytics.google.com; frame-src https://accounts.google.com; worker-src 'self'" />
   <title>Zakat Calculator | S M Y ATHAR</title>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <link rel="icon" href="assets/logo.png" type="image/png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20260714" />
+  <link rel="stylesheet" href="styles.css?v=20260810" />
   <!-- Google tag (gtag.js) -->
   <script src="../js/gtag-bootstrap.js"></script>
   <script src="https://www.googletagmanager.com/gtag/js?id=G-3DFSY795RJ"></script>
@@ -61,13 +67,22 @@
 
   <script src="../js/analytics.js"></script>
   <script src="vendor/xlsx.full.min.js"></script>
-  <script src="app/zakat.js?v=20260714"></script>
-  <script src="app/storage.js?v=20260714"></script>
-  <script src="app/excel.js?v=20260714"></script>
-  <script src="app/rates.js?v=20260714"></script>
-  <script src="app/rates_history.js?v=20260714"></script>
-  <script src="app/gdrive.js?v=20260714"></script>
-  <script src="app/help.js?v=20260714"></script>
-  <script src="app/ui.js?v=20260714"></script>
+  <script src="app/zakat.js?v=20260810"></script>
+  <script src="app/storage.js?v=20260810"></script>
+  <script src="app/excel.js?v=20260810"></script>
+  <script src="app/rates.js?v=20260810"></script>
+  <script src="app/rates_history.js?v=20260810"></script>
+  <script src="app/gdrive.js?v=20260810"></script>
+  <script src="app/help.js?v=20260810"></script>
+  <script src="app/ui.js?v=20260810"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("/zakaat/sw.js", { scope: "/zakaat/" })
+          .then(function (reg) { console.log("[SW] Registered, scope:", reg.scope); })
+          .catch(function (err) { console.warn("[SW] Registration failed:", err); });
+      });
+    }
+  </script>
 </body>
 </html>

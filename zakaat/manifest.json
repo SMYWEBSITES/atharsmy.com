@@ -1,0 +1,49 @@
+{
+  "name": "Household Zakat Calculator",
+  "short_name": "Zakat",
+  "description": "Offline-first Zakat calculator for families — cash, gold, stocks, PF and more. Works in 8 languages.",
+  "start_url": "/zakaat/",
+  "scope": "/zakaat/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a1a1a",
+  "theme_color": "#0a1a1a",
+  "lang": "en",
+  "dir": "auto",
+  "categories": ["finance", "utilities"],
+  "icons": [
+    {
+      "src": "assets/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "url": "/zakaat/#dashboard",
+      "description": "View your household Zakat summary"
+    },
+    {
+      "name": "Market Rates",
+      "short_name": "Rates",
+      "url": "/zakaat/#rates",
+      "description": "Fetch live gold and silver rates"
+    }
+  ]
+}
