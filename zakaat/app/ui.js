@@ -409,8 +409,13 @@
       },
       {
         label: Help.t("gs_step4"),
-        note: Help.t("gs_step4_note"),
         done: hasAssets,
+        click: hasMembers ? () => {
+          // Open the checklist for the first member that has no assets yet,
+          // or for the first member if everyone already has some.
+          const target = members.find((m) => !(m.assets || []).length) || members[0];
+          showAssetChecklist(target.id);
+        } : null,
       },
       {
         label: Help.t("gs_step5"),
