@@ -390,7 +390,7 @@
 
     const steps = [
       {
-        label: "Save your family name",
+        label: Help.t("gs_step1"),
         done: hasFamily,
         click: () => {
           const inp = document.getElementById("family-name-input");
@@ -398,23 +398,23 @@
         },
       },
       {
-        label: "Choose currency, language & school",
-        note: "Use the preferences panel below",
+        label: Help.t("gs_step2"),
+        note: Help.t("gs_step2_note"),
         done: true, // always reachable
       },
       {
-        label: "Add yourself (or your family) as a member",
+        label: Help.t("gs_step3"),
         done: hasMembers,
         click: hasFamily ? () => memberForm() : null,
       },
       {
-        label: "Tap “What do I own?” to add your first asset",
-        note: "Open any member section → What do I own?",
+        label: Help.t("gs_step4"),
+        note: Help.t("gs_step4_note"),
         done: hasAssets,
       },
       {
-        label: "See your Zakat amount in the summary below",
-        note: "It updates as you add assets",
+        label: Help.t("gs_step5"),
+        note: Help.t("gs_step5_note"),
         done: hasAssets,
       },
     ];
@@ -432,8 +432,8 @@
     });
 
     const card = el("div", { class: "panel getting-started" });
-    card.appendChild(el("h2", { text: "Getting started" }));
-    card.appendChild(el("p", { class: "sub", text: "New to Zakat? Follow these five steps. Completed steps turn green automatically." }));
+    card.appendChild(el("h2", { text: Help.t("gs_title") }));
+    card.appendChild(el("p", { class: "sub", text: Help.t("gs_sub") }));
     card.appendChild(el("div", { class: "gs-steps" }, stepEls));
     panel.appendChild(card);
   }
@@ -512,10 +512,11 @@
       type: "text",
       id: "family-name-input",
       value: Store.getFamilyName(),
-      placeholder: "SMY FAMILY",
+      placeholder: Help.t("ph_family_name"),
       maxlength: "64",
       autocomplete: "family-name",
     });
+    Help.bindPh(nameInput, "ph_family_name");
     const householdPanel = el("div", { class: "panel household-panel" });
     householdPanel.appendChild(el("h2", { text: Help.t("household_title") }));
     householdPanel.appendChild(el("p", {
@@ -996,7 +997,7 @@
     }
 
     const inp = isMetal
-      ? el("input", { type: "number", step: "0.001", value: editWeight, placeholder: isDiamond ? "carats" : "grams", style: "max-width:130px" })
+      ? el("input", { type: "number", step: "0.001", value: editWeight, placeholder: Help.t(isDiamond ? "ph_carats" : "ph_grams"), style: "max-width:130px" })
       : el("input", { type: "number", step: "0.01", value: editInr, placeholder: curCode(), style: "max-width:140px" });
 
     const saveBtn = el("button", { class: "link", text: "Save", onclick: () => {
@@ -1409,7 +1410,7 @@
       // Assets
       body.appendChild(el("div", { class: "member-section-title", text: "Assets" }));
       if (!(m.assets || []).length) {
-        body.appendChild(el("div", { class: "muted", style: "font-size:13px;margin-top:6px", text: "No assets yet. Tap “What do I own?” to find out what counts toward Zakat." }));
+        body.appendChild(el("div", { class: "muted", style: "font-size:13px;margin-top:6px", text: Help.t("no_assets_yet") }));
       } else {
         const rows = m.assets.map((a) => {
           const val = ZK.effectiveValuationInr(a, rates, baseline);
@@ -1564,8 +1565,8 @@
   }
 
   function memberForm(existing) {
-    const name = el("input", { type: "text", value: existing ? existing.name : "", placeholder: "Full name, e.g. Altamash" });
-    const rel = el("input", { type: "text", value: existing ? existing.relationship : "", placeholder: "Relationship, e.g. Self, Spouse, Son" });
+    const name = el("input", { type: "text", value: existing ? existing.name : "", placeholder: Help.t("ph_member_name") });
+    const rel = el("input", { type: "text", value: existing ? existing.relationship : "", placeholder: Help.t("ph_member_rel") });
     const body = el("form", null, [
       helpLangBar(),
       helpNode("member_intro", "form-intro"),
@@ -1596,18 +1597,18 @@
     if (!existing) cat.value = preCategory || "Cash";
     else if (existing.category) cat.value = existing.category;
 
-    const desc = el("input", { type: "text", value: existing ? existing.description || "" : "", placeholder: "Short label, e.g. Savings account or Gold chain" });
+    const desc = el("input", { type: "text", value: existing ? existing.description || "" : "", placeholder: Help.t("ph_asset_desc") });
     const valuation = el("input", { type: "number", step: "0.01", value: existing && existing.valuation_inr != null ? existing.valuation_inr : "" });
     const weight = el("input", { type: "number", step: "0.001", value: existing && existing.weight_grams != null ? existing.weight_grams : "" });
     const puritySelect = el("select");
-    const purityCustom = el("input", { type: "text", placeholder: "e.g. 21, 22.5, 91.7% or 925.5" });
+    const purityCustom = el("input", { type: "text", placeholder: Help.t("ph_purity_gold") });
     if (existing && existing.purity_value && !ZK.isPresetPurity(existing.category, existing.purity_value)) {
       purityCustom.value = existing.purity_value;
     }
     const carats = el("input", { type: "number", step: "0.001", value: existing && existing.gem_carats != null ? existing.gem_carats : "" });
     const subtype = el("select");
     const quantity = el("input", { type: "number", step: "1", value: existing && existing.quantity_count != null ? existing.quantity_count : "" });
-    const acquiredYear = el("input", { type: "number", step: "1", value: existing && existing.acquired_year != null ? existing.acquired_year : "", placeholder: "e.g. 2021" });
+    const acquiredYear = el("input", { type: "number", step: "1", value: existing && existing.acquired_year != null ? existing.acquired_year : "", placeholder: Help.t("ph_acquired_year") });
     const hawlStart = el("input", { type: "date", value: existing ? existing.hawl_start_date || "" : "" });
     const jewelry = el("input", { type: "checkbox" });
     if (existing && existing.is_personal_jewelry) jewelry.checked = true;
@@ -1683,9 +1684,7 @@
       show(fPurityCustom, isCustom);
       if (isCustom && saved) purityCustom.value = saved;
       else if (!isCustom) purityCustom.value = "";
-      purityCustom.placeholder = category === "Gold"
-        ? "e.g. 21, 22.5, 91.7%, 0.917"
-        : "e.g. 925.5, 92.5%, 0.925";
+      purityCustom.placeholder = Help.t(category === "Gold" ? "ph_purity_gold" : "ph_purity_silver");
     }
 
     function currentPurityValue() {
@@ -1847,8 +1846,8 @@
 
   // --- Payment form ---
   function paymentForm(memberId, existing) {
-    const given = el("input", { type: "text", value: existing ? existing.given_to || "" : "", placeholder: "Who received it, e.g. Local masjid" });
-    const amount = el("input", { type: "number", step: "0.01", value: existing && existing.amount_inr != null ? existing.amount_inr : "", placeholder: "Amount" });
+    const given = el("input", { type: "text", value: existing ? existing.given_to || "" : "", placeholder: Help.t("ph_pay_given") });
+    const amount = el("input", { type: "number", step: "0.01", value: existing && existing.amount_inr != null ? existing.amount_inr : "", placeholder: Help.t("ph_amount") });
     const body = el("form", null, [
       helpLangBar(),
       helpNode("pay_intro", "form-intro"),
@@ -2163,10 +2162,10 @@
 
     // Manual add-year row
     const yIn = el("input", { type: "number", step: "1", value: now, style: "max-width:110px" });
-    const yg = el("input", { type: "number", step: "0.01", placeholder: "Gold /g", style: "max-width:110px" });
-    const ys = el("input", { type: "number", step: "0.01", placeholder: "Silver /g", style: "max-width:100px" });
-    const yp = el("input", { type: "number", step: "0.01", placeholder: "Platinum /g", style: "max-width:110px" });
-    const yd = el("input", { type: "number", step: "0.01", placeholder: "Diamond /ct", style: "max-width:120px" });
+    const yg = Help.bindPh(el("input", { type: "number", step: "0.01", style: "max-width:110px" }), "ph_rate_gold");
+    const ys = Help.bindPh(el("input", { type: "number", step: "0.01", style: "max-width:100px" }), "ph_rate_silver");
+    const yp = Help.bindPh(el("input", { type: "number", step: "0.01", style: "max-width:110px" }), "ph_rate_platinum");
+    const yd = Help.bindPh(el("input", { type: "number", step: "0.01", style: "max-width:120px" }), "ph_rate_diamond");
     const addBtn = el("button", { class: "btn secondary", text: "Add / update year", onclick: (e) => {
       e.preventDefault();
       const yr = parseInt(yIn.value, 10);
@@ -2339,7 +2338,7 @@
       } else if (selected === "fresh") {
         const familyInput = el("input", {
           type: "text",
-          placeholder: "SMY FAMILY",
+          placeholder: Help.t("ph_family_name"),
           maxlength: "64",
           autocomplete: "family-name",
         });

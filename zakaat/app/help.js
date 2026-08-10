@@ -765,6 +765,270 @@
       tr: "Mezhep güncellendi",
       fr: "École mise à jour",
     },
+
+    // ---- Getting started checklist ----
+    gs_title: {
+      en: "Getting started",
+      ur: "شروعات",
+      hi: "शुरुआत करें",
+      ar: "البداية",
+      bn: "শুরু করুন",
+      id: "Mulai",
+      tr: "Başlarken",
+      fr: "Démarrage",
+    },
+    gs_sub: {
+      en: "New to Zakat? Follow these five steps. Completed steps turn green automatically.",
+      ur: "زکوٰۃ پہلی بار؟ یہ پانچ مراحل اپنائیں۔ مکمل مراحل خود بخود سبز ہو جائیں گے۔",
+      hi: "पहली बार ज़कात? ये पाँच चरण अपनाएँ। पूरे होने पर अपने-आप हरे हो जाएँगे।",
+      ar: "للمبتدئين: اتّبع هذه الخطوات الخمس. تتحوّل الخطوات المكتملة إلى اللون الأخضر تلقائياً.",
+      bn: "যাকাত প্রথমবার? এই পাঁচটি ধাপ অনুসরণ করুন। সম্পন্ন ধাপ স্বয়ংক্রিয়ভাবে সবুজ হবে।",
+      id: "Baru mengenal Zakat? Ikuti lima langkah ini. Langkah selesai otomatis berubah hijau.",
+      tr: "Zekât'a yeni misiniz? Bu beş adımı izleyin. Tamamlanan adımlar otomatik yeşile döner.",
+      fr: "Nouveau à la Zakât ? Suivez ces cinq étapes. Les étapes complètes deviennent vertes automatiquement.",
+    },
+    gs_step1: {
+      en: "Save your family name",
+      ur: "اپنے خاندان کا نام محفوظ کریں",
+      hi: "अपने परिवार का नाम सेव करें",
+      ar: "احفظ اسم عائلتك",
+      bn: "পারিবারিক নাম সেভ করুন",
+      id: "Simpan nama keluarga",
+      tr: "Aile adınızı kaydedin",
+      fr: "Enregistrez le nom de famille",
+    },
+    gs_step2: {
+      en: "Choose currency, language & school",
+      ur: "کرنسی، زبان اور مسلک منتخب کریں",
+      hi: "मुद्रा, भाषा और मसलक चुनें",
+      ar: "اختر العملة واللغة والمذهب",
+      bn: "মুদ্রা, ভাষা ও মাযহাব বেছে নিন",
+      id: "Pilih mata uang, bahasa & mazhab",
+      tr: "Para birimi, dil ve mezhep seçin",
+      fr: "Choisissez devise, langue et école",
+    },
+    gs_step2_note: {
+      en: "Use the preferences panel below",
+      ur: "نیچے ترجیحات پینل استعمال کریں",
+      hi: "नीचे प्राथमिकताएँ पैनल उपयोग करें",
+      ar: "استخدم لوحة التفضيلات أدناه",
+      bn: "নিচের পছন্দ প্যানেল ব্যবহার করুন",
+      id: "Gunakan panel preferensi di bawah",
+      tr: "Aşağıdaki tercihler panelini kullanın",
+      fr: "Utilisez le panneau des préférences ci-dessous",
+    },
+    gs_step3: {
+      en: "Add yourself (or your family) as a member",
+      ur: "خود کو (یا خاندان کو) فرد کے طور پر شامل کریں",
+      hi: "खुद को (या परिवार को) सदस्य के रूप में जोड़ें",
+      ar: "أضف نفسك (أو عائلتك) كفرد",
+      bn: "নিজেকে (বা পরিবারকে) সদস্য হিসেবে যোগ করুন",
+      id: "Tambahkan diri Anda (atau keluarga) sebagai anggota",
+      tr: "Kendinizi (veya ailenizi) üye olarak ekleyin",
+      fr: "Ajoutez-vous (ou votre famille) en tant que membre",
+    },
+    gs_step4: {
+      en: "Tap “What do I own?” to add your first asset",
+      ur: "“میرے پاس کیا ہے؟” پر ٹیپ کریں اور پہلا اثاثہ شامل کریں",
+      hi: "“मेरे पास क्या है?” पर टैप करें और पहली संपत्ति जोड़ें",
+      ar: "اضغط “ماذا أملك؟” لإضافة أول أصل",
+      bn: "“আমার কী আছে?” ট্যাপ করুন এবং প্রথম সম্পদ যোগ করুন",
+      id: "Ketuk “Apa yang saya miliki?” untuk menambah aset pertama",
+      tr: "“Nem var?” seçeneğine dokunarak ilk varlığı ekleyin",
+      fr: "Appuyez sur “Que possédé-je ?” pour ajouter votre premier bien",
+    },
+    gs_step4_note: {
+      en: "Open any member section → What do I own?",
+      ur: "کسی بھی فرد کا حصہ کھولیں ← میرے پاس کیا ہے؟",
+      hi: "किसी भी सदस्य का अनुभाग खोलें → मेरे पास क्या है?",
+      ar: "افتح أي قسم لفرد → ماذا أملك؟",
+      bn: "যেকোনো সদস্যের অংশ খুলুন → আমার কী আছে?",
+      id: "Buka bagian anggota mana saja → Apa yang saya miliki?",
+      tr: "Herhangi bir üye bölümünü açın → Nem var?",
+      fr: "Ouvrez n'importe quelle section membre → Que possédé-je ?",
+    },
+    gs_step5: {
+      en: "See your Zakat amount in the summary below",
+      ur: "نیچے خلاصے میں اپنی زکوٰۃ کی رقم دیکھیں",
+      hi: "नीचे सारांश में अपनी ज़कात राशि देखें",
+      ar: "اعرض مبلغ زكاتك في الملخص أدناه",
+      bn: "নিচে সারসংক্ষেপে আপনার যাকাত পরিমাণ দেখুন",
+      id: "Lihat jumlah Zakat Anda di ringkasan di bawah",
+      tr: "Aşağıdaki özette Zekât miktarınızı görün",
+      fr: "Consultez votre montant de Zakât dans le résumé ci-dessous",
+    },
+    gs_step5_note: {
+      en: "It updates as you add assets",
+      ur: "اثاثے شامل ہوتے ہی اپ ڈیٹ ہوتا ہے",
+      hi: "संपत्ति जोड़ने पर अपने-आप अपडेट होता है",
+      ar: "يتحدّث تلقائياً عند إضافة الأصول",
+      bn: "সম্পদ যোগ করলে স্বয়ংক্রিয়ভাবে আপডেট হয়",
+      id: "Diperbarui saat Anda menambah aset",
+      tr: "Varlık ekledikçe güncellenir",
+      fr: "Se met à jour au fil de vos ajouts",
+    },
+    no_assets_yet: {
+      en: "No assets yet. Tap “What do I own?” to find out what counts toward Zakat.",
+      ur: "ابھی تک کوئی اثاثہ نہیں۔ جاننے کے لیے کہ زکوٰۃ میں کیا شمار ہوتا ہے “میرے پاس کیا ہے؟” پر ٹیپ کریں۔",
+      hi: "अभी कोई संपत्ति नहीं। ज़कात में क्या गिना जाता है यह जानने के लिए “मेरे पास क्या है?” पर टैप करें।",
+      ar: "لا أصول بعد. اضغط “ماذا أملك؟” لمعرفة ما يُحسب في الزكاة.",
+      bn: "এখনো কোনো সম্পদ নেই। যাকাতে কী গণ্য হয় জানতে “আমার কী আছে?” ট্যাপ করুন।",
+      id: "Belum ada aset. Ketuk “Apa yang saya miliki?” untuk mengetahui apa yang termasuk Zakat.",
+      tr: "Henüz varlık yok. Zekâta neyin dahil olduğunu öğrenmek için “Nem var?” seçeneğine dokunun.",
+      fr: "Aucun bien pour l’instant. Appuyez sur “Que possédé-je ?” pour savoir ce qui compte pour la Zakât.",
+    },
+
+    // ---- Input placeholders ----
+    ph_family_name: {
+      en: "e.g. ATHAR FAMILY",
+      ur: "مثلاً: اطہر خاندان",
+      hi: "उदा. अथर परिवार",
+      ar: "مثلاً: عائلة عطار",
+      bn: "যেমন: আথার পরিবার",
+      id: "mis. KELUARGA ATHAR",
+      tr: "örn. ATHAR AİLESİ",
+      fr: "ex. FAMILLE ATHAR",
+    },
+    ph_member_name: {
+      en: "Full name, e.g. Altamash",
+      ur: "پورا نام، مثلاً الطماش",
+      hi: "पूरा नाम, उदा. अल्तमश",
+      ar: "الاسم الكامل، مثلاً: علتمش",
+      bn: "পুরো নাম, যেমন: আলতামাশ",
+      id: "Nama lengkap, mis. Budi",
+      tr: "Tam adı, örn. Ahmet",
+      fr: "Nom complet, ex. Yasmine",
+    },
+    ph_member_rel: {
+      en: "e.g. Self, Spouse, Son",
+      ur: "مثلاً: خود، شریکِ حیات، بیٹا",
+      hi: "उदा. खुद, जीवनसाथी, बेटा",
+      ar: "مثلاً: أنا، زوج، ابن",
+      bn: "যেমন: নিজে, স্ত্রী, ছেলে",
+      id: "mis. Saya, Pasangan, Putra",
+      tr: "örn. Ben, Eş, Oğul",
+      fr: "ex. Moi, Conjoint(e), Fils",
+    },
+    ph_asset_desc: {
+      en: "e.g. Savings account or Gold chain",
+      ur: "مثلاً: بچت کھاتہ یا سونے کی چین",
+      hi: "उदा. बचत खाता या सोने की चेन",
+      ar: "مثلاً: حساب توفير أو سلسلة ذهب",
+      bn: "যেমন: সঞ্চয় খাতা বা সোনার চেন",
+      id: "mis. Rekening tabungan atau kalung emas",
+      tr: "örn. Tasarruf hesabı veya altın kolye",
+      fr: "ex. Livret épargne ou collier en or",
+    },
+    ph_purity_gold: {
+      en: "e.g. 21, 22.5, 91.7%, 0.917",
+      ur: "مثلاً: 21، 22.5، 0.917",
+      hi: "उदा. 21, 22.5, 91.7%, 0.917",
+      ar: "مثلاً: 21، 22.5، 91.7%",
+      bn: "যেমন: 21, 22.5, 91.7%",
+      id: "mis. 21, 22,5, 91,7%",
+      tr: "örn. 21, 22,5, %91,7",
+      fr: "ex. 21, 22,5, 91,7%",
+    },
+    ph_purity_silver: {
+      en: "e.g. 925, 92.5%, 0.925",
+      ur: "مثلاً: 925، 92.5%",
+      hi: "उदा. 925, 92.5%, 0.925",
+      ar: "مثلاً: 925، 92.5%",
+      bn: "যেমন: 925, 92.5%",
+      id: "mis. 925, 92,5%",
+      tr: "örn. 925, %92,5",
+      fr: "ex. 925, 92,5%",
+    },
+    ph_acquired_year: {
+      en: "e.g. 2021",
+      ur: "مثلاً: 2021",
+      hi: "उदा. 2021",
+      ar: "مثلاً: 2021",
+      bn: "যেমন: 2021",
+      id: "mis. 2021",
+      tr: "örn. 2021",
+      fr: "ex. 2021",
+    },
+    ph_pay_given: {
+      en: "e.g. Local masjid, charity",
+      ur: "مثلاً: مقامی مسجد، خیراتی ادارہ",
+      hi: "उदा. स्थानीय मस्जिद, संस्था",
+      ar: "مثلاً: مسجد محلي، جمعية خيرية",
+      bn: "যেমন: স্থানীয় মসজিদ, সংস্থা",
+      id: "mis. Masjid lokal, yayasan amal",
+      tr: "örn. Yerel cami, hayır kurumu",
+      fr: "ex. Mosquée locale, association",
+    },
+    ph_amount: {
+      en: "Amount",
+      ur: "رقم",
+      hi: "राशि",
+      ar: "المبلغ",
+      bn: "পরিমাণ",
+      id: "Jumlah",
+      tr: "Tutar",
+      fr: "Montant",
+    },
+    ph_rate_gold: {
+      en: "Gold /g",
+      ur: "سونا /گرام",
+      hi: "सोना /ग्राम",
+      ar: "ذهب /غ",
+      bn: "সোনা /গ্রাম",
+      id: "Emas /g",
+      tr: "Altın /g",
+      fr: "Or /g",
+    },
+    ph_rate_silver: {
+      en: "Silver /g",
+      ur: "چاندی /گرام",
+      hi: "चाँदी /ग्राम",
+      ar: "فضة /غ",
+      bn: "রূপা /গ্রাম",
+      id: "Perak /g",
+      tr: "Gümüş /g",
+      fr: "Argent /g",
+    },
+    ph_rate_platinum: {
+      en: "Platinum /g",
+      ur: "پلاٹینم /گرام",
+      hi: "प्लैटिनम /ग्राम",
+      ar: "بلاتين /غ",
+      bn: "প্লাটিনাম /গ্রাম",
+      id: "Platinum /g",
+      tr: "Platin /g",
+      fr: "Platine /g",
+    },
+    ph_rate_diamond: {
+      en: "Diamond /ct",
+      ur: "ہیرا /قیراط",
+      hi: "हीरा /कैरेट",
+      ar: "ألماس /قيراط",
+      bn: "হীরা /ক্যারেট",
+      id: "Berlian /ct",
+      tr: "Elmas /karat",
+      fr: "Diamant /ct",
+    },
+    ph_grams: {
+      en: "grams",
+      ur: "گرام",
+      hi: "ग्राम",
+      ar: "غرام",
+      bn: "গ্রাম",
+      id: "gram",
+      tr: "gram",
+      fr: "grammes",
+    },
+    ph_carats: {
+      en: "carats",
+      ur: "قیراط",
+      hi: "कैरेट",
+      ar: "قيراط",
+      bn: "ক্যারেট",
+      id: "karat",
+      tr: "karat",
+      fr: "carats",
+    },
   };
 
   let lang = "en";
@@ -810,6 +1074,14 @@
     return node;
   }
 
+  // Bind an <input> placeholder to a translation key so refresh() keeps it updated.
+  function bindPh(input, key) {
+    input.dataset.phKey = key;
+    const entry = S[key];
+    input.placeholder = entry ? (entry[effectiveLang()] || entry.en || "") : "";
+    return input;
+  }
+
   // Re-translate every bound node currently in the document.
   function refresh(root) {
     const scope = root || document;
@@ -820,9 +1092,14 @@
       node.textContent = entry[code] || entry.en || "";
       applyDirection(node, code);
     });
+    scope.querySelectorAll("[data-ph-key]").forEach((node) => {
+      const entry = S[node.dataset.phKey];
+      if (!entry) return;
+      node.placeholder = entry[code] || entry.en || "";
+    });
   }
 
   global.ZKHelp = {
-    LANG_LABELS, availableLangs, getLang, setLang, effectiveLang, t, bind, refresh, applyDirection,
+    LANG_LABELS, availableLangs, getLang, setLang, effectiveLang, t, bind, refresh, bindPh, applyDirection,
   };
 })(window);
