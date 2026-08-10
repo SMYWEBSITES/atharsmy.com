@@ -1378,20 +1378,24 @@
       const head = el("div", { class: "member-head" }, [
         headToggle,
         el("div", { class: "member-actions" }, [
-          el("button", { class: "btn sm", text: "✦ What do I own?", onclick: () => showAssetChecklist(m.id) }),
-          el("button", { class: "btn sm secondary", text: "Zakat given", onclick: () => paymentForm(m.id) }),
-          el("button", { class: "btn-ghost sm", text: "Edit", onclick: () => memberForm(m) }),
-          el("button", {
-            class: "btn-ghost sm danger-text",
-            text: "Delete",
-            onclick: () => confirmDialog(
-              "Delete member",
-              "Delete " + m.name + " and all their assets and payments?",
-              () => { Store.deleteMember(m.id); refreshAll(); toast("Member deleted"); },
-              "Delete",
-              true
-            ),
-          }),
+          el("div", { class: "member-actions-primary" }, [
+            el("button", { class: "btn sm", text: "✦ What do I own?", onclick: () => showAssetChecklist(m.id) }),
+            el("button", { class: "btn sm secondary", text: "Zakat given", onclick: () => paymentForm(m.id) }),
+          ]),
+          el("div", { class: "member-actions-util" }, [
+            el("button", { class: "btn-ghost sm", text: "Edit", onclick: () => memberForm(m) }),
+            el("button", {
+              class: "btn-ghost sm danger-text",
+              text: "Delete",
+              onclick: () => confirmDialog(
+                "Delete member",
+                "Delete " + m.name + " and all their assets and payments?",
+                () => { Store.deleteMember(m.id); refreshAll(); toast("Member deleted"); },
+                "Delete",
+                true
+              ),
+            }),
+          ]),
         ]),
       ]);
       block.appendChild(head);
