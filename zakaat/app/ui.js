@@ -469,13 +469,18 @@
   // --- Asset discovery checklist ---
   const ASSET_CHECKLIST = [
     { label: "Bank savings, fixed deposits, or cash at home",   hint: "All savings accounts, current accounts, FDs, digital wallets, cash in hand.", category: "Cash" },
-    { label: "Gold — jewelry, coins, or bars",            hint: "Any gold you own. Personal jewelry may be exempt in Shafiʿi / Maliki / Hanbali.", category: "Gold" },
-    { label: "Silver — jewelry, coins, or utensils",       hint: "Silver cutlery, coins, jewelry.", category: "Silver" },
+    { label: "Gold — jewelry, coins, or bars",                  hint: "Any gold you own. Personal jewelry may be exempt in Shafiʿi / Maliki / Hanbali.", category: "Gold" },
+    { label: "Silver — jewelry, coins, or utensils",            hint: "Silver cutlery, coins, jewelry.", category: "Silver" },
+    { label: "Platinum — jewelry or bars",                      hint: "Platinum jewelry, bullion, or coins at current market value.", category: "Platinum" },
+    { label: "Diamond or gemstones",                            hint: "Diamonds and precious stones held as wealth or jewelry.", category: "Diamond" },
     { label: "Stocks, mutual funds, or shares",                 hint: "Any equity investments. Enter today’s total portfolio value.", category: "Stocks" },
     { label: "Provident fund / EPF / PPF",                      hint: "Enter the balance from your last PF statement — the app projects it to today.", category: "PF" },
     { label: "Business goods or inventory",                     hint: "Stock you keep for sale, and business cash. Not the shop building or machines.", category: "Business" },
     { label: "Your share in a joint business or partnership",   hint: "The current value of your stake.", category: "Partnership" },
     { label: "Property you are planning to sell",               hint: "Only ‘for sale’ property counts. Your home and rental buildings are exempt.", category: "Property", subtype: "trade" },
+    { label: "Crops or agricultural harvest",                   hint: "Value of your harvest. Rain-fed crops: 10% Zakat; irrigated: 5%. No nisab or hawl required.", category: "Agriculture" },
+    { label: "Livestock — sheep, cattle, or camels",            hint: "Zakatable animal herds based on Sunnah tiers. No hawl on the full herd value.", category: "Livestock" },
+    { label: "Rikaz — buried treasure or found wealth",         hint: "Wealth your scholar rules as rikaz (e.g. buried find). Zakat is 20% once, not 2.5% yearly. No nisab required.", category: "Rikaz" },
     { label: "Loans or debts you owe to others",                hint: "Reduces your zakatable wealth (degree depends on your school).", category: "Liabilities" },
   ];
 
@@ -1373,7 +1378,6 @@
       const head = el("div", { class: "member-head" }, [
         headToggle,
         el("div", { class: "member-actions" }, [
-          el("button", { class: "btn sm", text: "Add asset", onclick: () => assetForm(m.id) }),
           el("button", { class: "btn sm secondary", text: "Add payment", onclick: () => paymentForm(m.id) }),
           el("button", { class: "btn-ghost sm", text: "Edit", onclick: () => memberForm(m) }),
           el("button", {
@@ -1408,7 +1412,7 @@
       ]);
       body.appendChild(assetTitleRow);
       if (!(m.assets || []).length) {
-        body.appendChild(el("div", { class: "muted", style: "font-size:13px;margin-top:6px", text: "No assets yet. Tap “What do I own?” to find out what counts toward Zakat, or use “Add asset” above." }));
+        body.appendChild(el("div", { class: "muted", style: "font-size:13px;margin-top:6px", text: "No assets yet. Tap “What do I own?” to find out what counts toward Zakat." }));
       } else {
         const rows = m.assets.map((a) => {
           const val = ZK.effectiveValuationInr(a, rates, baseline);
