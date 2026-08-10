@@ -1,15 +1,17 @@
 /*
- * Inline form help for people who are new to Zakat.
+ * Site language + inline form help for people who are new to Zakat.
  *
  * Every string is written in plain, non-scholarly language and is available
- * in English plus the languages spoken where each supported currency is used.
- * English is always the default; the translation toggle only appears when the
- * selected currency maps to extra languages (e.g. INR -> Urdu/Hindi).
+ * in English, Urdu, Hindi and Arabic. The language switcher lives in the app
+ * header (and is repeated on the Dashboard and Rates tab) and is independent
+ * of the selected currency — picking a currency no longer changes which
+ * languages are offered.
  *
  * Usage from ui.js:
  *   ZKHelp.bind(node, key)   — set node text to t(key) and keep it updatable
  *   ZKHelp.refresh()         — re-translate every bound node after setLang()
- *   ZKHelp.availableLangs()  — languages for the current currency
+ *   ZKHelp.t(key)            — one-off translation lookup for chrome text
+ *   ZKHelp.availableLangs()  — the site's supported languages
  */
 (function (global) {
   "use strict";
@@ -19,20 +21,9 @@
     ur: "اردو",            // اردو
     hi: "हिन्दी", // हिन्दी
     ar: "العربية", // العربية
-    bn: "বাংলা",       // বাংলা
   };
 
   const RTL_LANGS = new Set(["ur", "ar"]);
-
-  // Which extra help languages make sense for each currency. English is
-  // always offered first; currencies not listed here stay English-only.
-  const CURRENCY_LANGS = {
-    INR: ["ur", "hi"],
-    PKR: ["ur"],
-    BDT: ["bn"],
-    AED: ["ar"], SAR: ["ar"], QAR: ["ar"], KWD: ["ar"], BHD: ["ar"],
-    OMR: ["ar"], JOD: ["ar"], EGP: ["ar"], MAD: ["ar"], DZD: ["ar"], TND: ["ar"],
-  };
 
   const LS_KEY = "zk_help_lang";
 
@@ -326,6 +317,163 @@
       ar: "الديون التي عليك — قروض وبطاقات. بحسب مذهبك تُخصم من المال الزكوي.",
       bn: "আপনার ঋণ — লোন, ক্রেডিট কার্ড ইত্যাদি। মাযহাব অনুযায়ী এটি যাকাতযোগ্য সম্পদ কমায়।",
     },
+
+    // ---- Site chrome: header, nav, Dashboard, Rates top section ----
+    // (this block is translated into en/ur/hi/ar only — the sitewide
+    // language switcher does not offer Bengali)
+    app_title: {
+      en: "Household Zakat Calculator",
+      ur: "گھریلو زکوٰۃ کیلکولیٹر",
+      hi: "पारिवारिक ज़कात कैलकुलेटर",
+      ar: "حاسبة زكاة الأسرة",
+    },
+    hero_sub: {
+      en: "Purify your wealth · fulfil the third pillar",
+      ur: "اپنے مال کو پاک کریں · اسلام کے تیسرے رکن کی ادائیگی کریں",
+      hi: "अपने माल को पाक करें · इस्लाम के तीसरे स्तंभ को पूरा करें",
+      ar: "زكِّ مالك · وأدِّ الركن الثالث",
+    },
+    nav_dashboard: { en: "Dashboard", ur: "ڈیش بورڈ", hi: "डैशबोर्ड", ar: "لوحة التحكم" },
+    nav_analytics: { en: "Analytics", ur: "تجزیات", hi: "विश्लेषण", ar: "التحليلات" },
+    nav_yearly: { en: "Yearly", ur: "سالانہ", hi: "वार्षिक", ar: "سنوي" },
+    nav_rates: { en: "Rates", ur: "نرخ", hi: "दरें", ar: "الأسعار" },
+    nav_backup: { en: "Backup", ur: "بیک اپ", hi: "बैकअप", ar: "نسخ احتياطي" },
+    nav_about: { en: "About", ur: "تعارف", hi: "परिचय", ar: "حول" },
+    today_label: { en: "Today", ur: "آج", hi: "आज", ar: "اليوم" },
+    baseline_label: {
+      en: "Zakat baseline",
+      ur: "زکوٰۃ کی بنیادی تاریخ",
+      hi: "ज़कात आधार तिथि",
+      ar: "تاريخ استحقاق الزكاة",
+    },
+    household_title: { en: "Your household", ur: "آپ کا گھرانہ", hi: "आपका परिवार", ar: "أسرتك" },
+    household_desc: {
+      en: "Add and save your family name first — it is required before adding members and assets. It labels this household on screen, in Excel backups, and in reports, and stays on this device unless you export or sync a backup.",
+      ur: "سب سے پہلے اپنے خاندان کا نام درج اور محفوظ کریں — افراد اور اثاثے شامل کرنے سے پہلے یہ ضروری ہے۔ یہ نام اس گھرانے کی پہچان کے طور پر اسکرین پر، ایکسل بیک اپ میں اور رپورٹس میں دکھایا جاتا ہے، اور بیک اپ ایکسپورٹ یا سِنک کیے بغیر صرف اسی ڈیوائس پر محفوظ رہتا ہے۔",
+      hi: "सबसे पहले अपने परिवार का नाम दर्ज करके सेव करें — सदस्य और संपत्ति जोड़ने से पहले यह ज़रूरी है। यह नाम इस घर की पहचान के तौर पर स्क्रीन पर, एक्सेल बैकअप में और रिपोर्ट्स में दिखता है, और बैकअप एक्सपोर्ट या सिंक किए बिना केवल इसी डिवाइस पर सुरक्षित रहता है।",
+      ar: "أدخل اسم عائلتك واحفظه أولاً — وهو مطلوب قبل إضافة الأفراد والممتلكات. يُستخدم هذا الاسم لتمييز الأسرة على الشاشة، وفي نسخ إكسل الاحتياطية، وفي التقارير، ويبقى على هذا الجهاز ما لم تُصدِّر أو تُزامن نسخة احتياطية.",
+    },
+    family_name_field_label: {
+      en: "Family name (required)",
+      ur: "خاندان کا نام (لازمی)",
+      hi: "परिवार का नाम (आवश्यक)",
+      ar: "اسم العائلة (مطلوب)",
+    },
+    family_name_help: {
+      en: "Family or surname only — for example SMY FAMILY. Individual member names are added separately below.",
+      ur: "صرف خاندان یا کنیت کا نام — مثال کے طور پر SMY FAMILY۔ ہر فرد کا نام الگ سے نیچے درج کیا جائے گا۔",
+      hi: "केवल परिवार या उपनाम — उदाहरण के लिए SMY FAMILY। हर सदस्य का नाम अलग से नीचे जोड़ा जाएगा।",
+      ar: "اسم العائلة فقط — مثال: SMY FAMILY. تُضاف أسماء الأفراد كل على حدة أدناه.",
+    },
+    save_family_name_btn: {
+      en: "Save family name",
+      ur: "خاندان کا نام محفوظ کریں",
+      hi: "परिवार का नाम सेव करें",
+      ar: "حفظ اسم العائلة",
+    },
+    toast_family_saved: {
+      en: "Family name saved",
+      ur: "خاندان کا نام محفوظ ہو گیا",
+      hi: "परिवार का नाम सेव हो गया",
+      ar: "تم حفظ اسم العائلة",
+    },
+    toast_family_enter: {
+      en: "Enter a family name",
+      ur: "خاندان کا نام درج کریں",
+      hi: "परिवार का नाम दर्ज करें",
+      ar: "أدخل اسم العائلة",
+    },
+    prefs_title: {
+      en: "Currency, language & school",
+      ur: "کرنسی، زبان اور مسلک",
+      hi: "मुद्रा, भाषा और मसलक",
+      ar: "العملة واللغة والمذهب",
+    },
+    currency_label: { en: "Currency", ur: "کرنسی", hi: "मुद्रा", ar: "العملة" },
+    lang_field_label: { en: "Language", ur: "زبان", hi: "भाषा", ar: "اللغة" },
+    lang_field_help: {
+      en: "Applies across the whole app, independent of your selected currency.",
+      ur: "یہ پوری ایپ پر لاگو ہوتا ہے، منتخب کردہ کرنسی سے آزاد۔",
+      hi: "यह पूरे ऐप पर लागू होता है, चुनी गई मुद्रा से स्वतंत्र।",
+      ar: "ينطبق على التطبيق بأكمله، بغض النظر عن العملة المختارة.",
+    },
+    school_field_label: {
+      en: "School (madhhab)",
+      ur: "مسلک (مذہب)",
+      hi: "मसलक (मज़हब)",
+      ar: "المذهب",
+    },
+    summary_title: {
+      en: "Household Zakat summary",
+      ur: "گھریلو زکوٰۃ کا خلاصہ",
+      hi: "पारिवारिक ज़कात सारांश",
+      ar: "ملخص زكاة الأسرة",
+    },
+    summary_sub_a: { en: "School:", ur: "مسلک:", hi: "मसलक:", ar: "المذهب:" },
+    summary_sub_b: {
+      en: "· using your entered rates · calculated as of the Zakat baseline date shown in the header.",
+      ur: "· آپ کے درج کردہ نرخوں کے مطابق · ہیڈر میں دکھائی گئی زکوٰۃ کی بنیادی تاریخ کے حساب سے شمار کیا گیا۔",
+      hi: "· आपकी दर्ज की गई दरों के अनुसार · हेडर में दिखाई गई ज़कात आधार तिथि के अनुसार गणना की गई।",
+      ar: "· باستخدام الأسعار التي أدخلتها · محسوبة حتى تاريخ استحقاق الزكاة الموضح في الأعلى.",
+    },
+    card_total_wealth: { en: "Total wealth", ur: "کل مال", hi: "कुल संपत्ति", ar: "إجمالي الثروة" },
+    card_zakat_amount: { en: "Zakat amount", ur: "زکوٰۃ کی رقم", hi: "ज़कात राशि", ar: "مبلغ الزكاة" },
+    card_paid: { en: "Paid", ur: "ادا شدہ", hi: "भुगतान किया गया", ar: "المدفوع" },
+    card_remaining: { en: "Remaining", ur: "باقی", hi: "शेष", ar: "المتبقي" },
+    family_section_title: {
+      en: "Family members & assets",
+      ur: "گھر کے افراد اور اثاثے",
+      hi: "परिवार के सदस्य और संपत्ति",
+      ar: "أفراد الأسرة والممتلكات",
+    },
+    family_section_desc: {
+      en: "Add each person in your household, then expand their section to record assets and Zakat payments.",
+      ur: "گھر کے ہر فرد کو شامل کریں، پھر اس کا سیکشن کھول کر اثاثے اور زکوٰۃ کی ادائیگیاں درج کریں۔",
+      hi: "अपने घर के हर सदस्य को जोड़ें, फिर उसका सेक्शन खोलकर संपत्ति और ज़कात भुगतान दर्ज करें।",
+      ar: "أضف كل فرد من أفراد أسرتك، ثم افتح قسمه لتسجيل الممتلكات ودفعات الزكاة.",
+    },
+    add_member_btn: {
+      en: "Add family member",
+      ur: "خاندان کا فرد شامل کریں",
+      hi: "परिवार का सदस्य जोड़ें",
+      ar: "إضافة فرد من العائلة",
+    },
+    family_empty_state: {
+      en: "Save your family name in “Your household” above, then add your first family member.",
+      ur: "اوپر “آپ کا گھرانہ” میں اپنے خاندان کا نام محفوظ کریں، پھر اپنا پہلا فرد شامل کریں۔",
+      hi: "ऊपर “आपका परिवार” में अपने परिवार का नाम सेव करें, फिर अपना पहला सदस्य जोड़ें।",
+      ar: "احفظ اسم عائلتك في “أسرتك” أعلاه، ثم أضف أول فرد من عائلتك.",
+    },
+    family_empty_no_members: {
+      en: "No members yet. Add your first family member above.",
+      ur: "ابھی تک کوئی فرد شامل نہیں۔ اوپر اپنا پہلا فرد شامل کریں۔",
+      hi: "अभी तक कोई सदस्य नहीं जोड़ा गया। ऊपर अपना पहला सदस्य जोड़ें।",
+      ar: "لا يوجد أفراد بعد. أضف أول فرد من عائلتك أعلاه.",
+    },
+    toast_add_family_first: {
+      en: "Add and save your family name first",
+      ur: "پہلے اپنے خاندان کا نام شامل اور محفوظ کریں",
+      hi: "पहले अपने परिवार का नाम जोड़ें और सेव करें",
+      ar: "أضف اسم عائلتك واحفظه أولاً",
+    },
+    school_panel_title: {
+      en: "Calculation school (madhhab)",
+      ur: "حسابی مسلک (مذہب)",
+      hi: "गणना मसलक (मज़हब)",
+      ar: "مذهب الحساب",
+    },
+    school_panel_sub: {
+      en: "Affects nisab basis, jewelry exemption, and debt deduction.",
+      ur: "یہ نصاب کی بنیاد، زیورات کی چھوٹ، اور قرض کی کٹوتی پر اثر انداز ہوتا ہے۔",
+      hi: "यह निसाब आधार, गहनों की छूट, और कर्ज़ की कटौती को प्रभावित करता है।",
+      ar: "يؤثر في أساس النصاب، وإعفاء الحلي، وخصم الديون.",
+    },
+    toast_school_updated: {
+      en: "School updated",
+      ur: "مسلک اپ ڈیٹ ہو گیا",
+      hi: "मसलक अपडेट हो गया",
+      ar: "تم تحديث المذهب",
+    },
   };
 
   let lang = "en";
@@ -347,16 +495,11 @@
     return entry[lang] || entry.en || "";
   }
 
-  // Languages available for the currently selected currency (English first).
+  // The site's supported languages, independent of currency.
   function availableLangs() {
-    let cur = "";
-    try { cur = (global.ZKStore && global.ZKStore.getCurrency()) || ""; } catch (e) { /* ignore */ }
-    const extra = CURRENCY_LANGS[cur] || [];
-    return ["en"].concat(extra);
+    return Object.keys(LANG_LABELS);
   }
 
-  // If the saved language is not offered for the current currency, show English
-  // (without erasing the saved preference — switching back to INR restores Urdu).
   function effectiveLang() {
     return availableLangs().indexOf(lang) >= 0 ? lang : "en";
   }
@@ -389,6 +532,6 @@
   }
 
   global.ZKHelp = {
-    LANG_LABELS, availableLangs, getLang, setLang, effectiveLang, t, bind, refresh,
+    LANG_LABELS, availableLangs, getLang, setLang, effectiveLang, t, bind, refresh, applyDirection,
   };
 })(window);

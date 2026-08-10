@@ -72,6 +72,27 @@ body {
   opacity: 0.85;
 }
 
+.site-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lang-select {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--emerald-100);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lang-select:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
 h1, h2, h3 { margin: 0; }
 
 .app-header {
@@ -813,6 +834,13 @@ td.num.neg { color: var(--red-600); }
 .cat-explainer:empty { display: none; }
 /* RTL help lines (Urdu/Arabic) read right-to-left within the same layout */
 .help[dir="rtl"], .form-intro[dir="rtl"], .cat-explainer[dir="rtl"] { text-align: right; }
+/* Sitewide chrome — right-align translated text leaf nodes only; flex/grid
+   containers that wrap them are untouched. unicode-bidi: plaintext lets each
+   node's *actual* script decide inner reading order, so an as-yet-untranslated
+   English sentence inside an RTL page still reads left-to-right internally
+   (fixes trailing punctuation jumping to the wrong side) while still
+   right-aligning to match the rest of the RTL layout. */
+[dir="rtl"] { text-align: right; unicode-bidi: plaintext; }
 
 /* --- Welcome: region & preferences chooser --- */
 .welcome-prefs {

@@ -25,6 +25,15 @@
         else if (k.startsWith("on") && typeof attrs[k] === "function") node.addEventListener(k.slice(2), attrs[k]);
         else if (attrs[k] !== null && attrs[k] !== undefined) node.setAttribute(k, attrs[k]);
       }
+      // Right-align/tag every plain text leaf node for the current site
+      // language (Urdu/Arabic), unless the caller set dir/lang explicitly
+      // (e.g. a node that always shows a specific-language word regardless
+      // of the active UI language). Only applies to leaf text nodes — flex/
+      // grid containers are built without a `text` attr, so their layout
+      // order is never touched.
+      if (attrs.text !== undefined && attrs.dir === undefined && attrs.lang === undefined && Help) {
+        Help.applyDirection(node, Help.effectiveLang());
+      }
     }
     if (children) (Array.isArray(children) ? children : [children]).forEach((c) => {
       if (c == null) return;
@@ -382,23 +391,51 @@
       autocomplete: "family-name",
     });
     const householdPanel = el("div", { class: "panel household-panel" });
-    householdPanel.appendChild(el("h2", { text: "Your household" }));
+    householdPanel.appendChild(el("h2", { text: Help.t("household_title") }));
     householdPanel.appendChild(el("p", {
       class: "sub",
-      text: "Add and save your family name first — it is required before adding members and assets. It labels this household on screen, in Excel backups, and in reports, and stays on this device unless you export or sync a backup.",
+      text: Help.t("household_desc"),
     }));
-    householdPanel.appendChild(field("Family name (required)", nameInput, "Family or surname only — for example SMY FAMILY. Individual member names are added separately below."));
+    householdPanel.appendChild(field(Help.t("family_name_field_label"), nameInput, Help.t("family_name_help")));
     householdPanel.appendChild(el("div", { class: "btn-row" }, [
       el("button", {
         class: "btn",
-        text: "Save family name",
+        text: Help.t("save_family_name_btn"),
         onclick: () => {
           const saved = saveFamilyName(nameInput.value, "dashboard");
-          toast(saved ? "Family name saved" : "Enter a family name", saved ? "ok" : "err");
+          toast(saved ? Help.t("toast_family_saved") : Help.t("toast_family_enter"), saved ? "ok" : "err");
         },
       }),
     ]));
     panel.appendChild(householdPanel);
+  }
+
+  // Currency, school (madhhab) and form-help language, surfaced on the
+  // Dashboard so they don't require a trip to the Rates tab or welcome screen.
+  function renderPreferencesPanel(panel) {
+    const prefCur = currencySelectNode();
+    const prefMadhab = madhabSelectNode();
+    const prefLangWrap = el("span", { class: "pref-lang-wrap" });
+
+    function renderPrefLang() {
+      clear(prefLangWrap);
+      const sel = helpLangSelectNode();
+      if (sel) prefLangWrap.appendChild(sel);
+    }
+    renderPrefLang();
+
+    prefCur.addEventListener("change", () => { applyCurrencyChange(prefCur.value); renderPrefLang(); });
+    prefMadhab.addEventListener("change", () => { Store.setMadhab(prefMadhab.value); toast(Help.t("toast_school_updated"), "ok"); refreshAll(); });
+
+    const prefsPanel = el("div", { class: "panel welcome-prefs" }, [
+      el("div", { class: "welcome-prefs-title", text: Help.t("prefs_title") }),
+      el("div", { class: "field-row3" }, [
+        field(Help.t("currency_label"), prefCur),
+        el("div", { class: "field" }, [el("label", { text: Help.t("lang_field_label") }), prefLangWrap]),
+        field(Help.t("school_field_label"), prefMadhab),
+      ]),
+    ]);
+    panel.appendChild(prefsPanel);
   }
 
   function trackTabView(tab) {
@@ -445,9 +482,11 @@
   function renderBaselineMeta() {
     const meta = document.getElementById("baseline-meta");
     const today = ZK.todayUTC();
-    let html = "<div>Today: <strong>" + ZK.fmtDate(today) + "</strong></div>";
+    const todayLabel = (Help && Help.t("today_label")) || "Today";
+    const baselineLabel = (Help && Help.t("baseline_label")) || "Zakat baseline";
+    let html = "<div>" + todayLabel + ": <strong>" + ZK.fmtDate(today) + "</strong></div>";
     try {
-      html += "<div>Zakat baseline: <strong>" + ZK.fmtDate(baseline) + "</strong></div>";
+      html += "<div>" + baselineLabel + ": <strong>" + ZK.fmtDate(baseline) + "</strong></div>";
       html += "<div>" + ZK.formatHijriDate(baseline) + "</div>";
     } catch (e) { /* Intl islamic calendar unavailable */ }
     meta.innerHTML = html;
@@ -461,12 +500,13 @@
     const hero = el("div", { class: "hero" }, [
       el("img", { class: "hero-img", src: "assets/kaaba-hero.png", alt: "The Kaaba, Masjid al-Haram" }),
       el("div", { class: "hero-overlay" }, [
-        el("div", { class: "hero-title", text: "Household Zakat Calculator" }),
-        el("div", { class: "hero-sub", text: "Purify your wealth \u00b7 fulfil the third pillar" }),
+        el("div", { class: "hero-title", text: Help.t("app_title") }),
+        el("div", { class: "hero-sub", text: Help.t("hero_sub") }),
       ]),
     ]);
     panel.appendChild(hero);
     renderFamilyNamePanel(panel);
+    renderPreferencesPanel(panel);
 
     const rates = Store.getRates();
     const madhab = Store.getMadhab();
@@ -476,15 +516,15 @@
     const rules = ZK.MADHAB_RULES[madhab];
 
     const summaryPanel = el("div", { class: "panel" });
-    summaryPanel.appendChild(el("h2", { text: "Household Zakat summary" }));
-    summaryPanel.appendChild(el("p", { class: "sub", text: "School: " + rules.label + " \u00b7 using your entered rates \u00b7 calculated as of the Zakat baseline date shown in the header." }));
+    summaryPanel.appendChild(el("h2", { text: Help.t("summary_title") }));
+    summaryPanel.appendChild(el("p", { class: "sub", text: Help.t("summary_sub_a") + " " + rules.label + " " + Help.t("summary_sub_b") }));
 
     const totalWealth = household.members.reduce((s, m) => s + m.total_wealth_inr, 0);
     const cards = el("div", { class: "cards" }, [
-      card("Total wealth", ZK.fmtINR(totalWealth)),
-      card("Zakat amount", ZK.fmtINR(household.total_zakat_inr), "accent"),
-      card("Paid", ZK.fmtINR(household.total_paid_inr)),
-      card("Remaining", ZK.fmtINR(Math.max(0, household.total_remaining_inr)), household.total_remaining_inr > 0.005 ? "warn" : ""),
+      card(Help.t("card_total_wealth"), ZK.fmtINR(totalWealth)),
+      card(Help.t("card_zakat_amount"), ZK.fmtINR(household.total_zakat_inr), "accent"),
+      card(Help.t("card_paid"), ZK.fmtINR(household.total_paid_inr)),
+      card(Help.t("card_remaining"), ZK.fmtINR(Math.max(0, household.total_remaining_inr)), household.total_remaining_inr > 0.005 ? "warn" : ""),
     ]);
     summaryPanel.appendChild(cards);
     panel.appendChild(summaryPanel);
@@ -1154,12 +1194,12 @@
     const madhab = Store.getMadhab();
 
     const head = el("div", { class: "panel" });
-    head.appendChild(el("h2", { text: "Family members & assets" }));
-    head.appendChild(el("p", { class: "sub", text: "Add each person in your household, then expand their section to record assets and Zakat payments." }));
-    head.appendChild(el("button", { class: "btn", text: "Add family member", onclick: () => {
+    head.appendChild(el("h2", { text: Help.t("family_section_title") }));
+    head.appendChild(el("p", { class: "sub", text: Help.t("family_section_desc") }));
+    head.appendChild(el("button", { class: "btn", text: Help.t("add_member_btn"), onclick: () => {
       // Family name is mandatory before any members/assets are recorded.
       if (!Store.getFamilyName()) {
-        toast("Add and save your family name first", "err");
+        toast(Help.t("toast_add_family_first"), "err");
         const inp = document.getElementById("family-name-input");
         if (inp) {
           inp.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -1174,8 +1214,8 @@
     const members = Store.members();
     if (!members.length) {
       const hint = Store.getFamilyName()
-        ? "No members yet. Add your first family member above."
-        : "Save your family name in “Your household” above, then add your first family member.";
+        ? Help.t("family_empty_no_members")
+        : Help.t("family_empty_state");
       panel.appendChild(el("div", { class: "panel" }, el("div", { class: "empty", text: hint })));
       return;
     }
@@ -1713,14 +1753,56 @@
       el("option", { value: k, selected: k === madhab ? "selected" : null, text: ZK.MADHAB_RULES[k].label })));
   }
 
-  // Help-language select for the current currency (English + matching languages).
-  function helpLangSelectNode() {
+  // Sitewide language select — independent of currency. `afterChange` lets a
+  // caller whose own markup lives outside the tab panels (e.g. the welcome
+  // modal) re-translate its static labels too, since applyLanguageChange's
+  // refreshAll() only rebuilds the active tab panel, not modal content.
+  function helpLangSelectNode(afterChange) {
     if (!Help) return null;
     const langs = Help.availableLangs();
     const sel = el("select", null, langs.map((code) =>
       el("option", { value: code, selected: code === Help.effectiveLang() ? "selected" : null, text: Help.LANG_LABELS[code] })));
-    sel.addEventListener("change", () => { Help.setLang(sel.value); Help.refresh(); });
+    sel.addEventListener("change", () => { applyLanguageChange(sel.value); if (afterChange) afterChange(); });
     return sel;
+  }
+
+  // Switch the sitewide language: persist it, re-translate the header/nav
+  // chrome, and fully re-render the active tab so every visible string
+  // (not just nodes bound via Help.bind) picks up the new language.
+  function applyLanguageChange(code) {
+    Help.setLang(code);
+    renderChrome();
+    refreshAll();
+  }
+
+  const NAV_LANG_KEYS = {
+    dashboard: "nav_dashboard", analytics: "nav_analytics", yearly: "nav_yearly",
+    rates: "nav_rates", backup: "nav_backup", guide: "nav_about",
+  };
+
+  // Re-translate the header chrome that lives outside the tab panels (page
+  // title, nav labels) and isn't touched by refreshAll()'s tab re-render.
+  function renderChrome() {
+    if (!Help) return;
+    const h1 = document.querySelector(".app-header h1");
+    if (h1) h1.textContent = Help.t("app_title") || "Household Zakat Calculator";
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      const key = NAV_LANG_KEYS[btn.dataset.tab];
+      if (key) btn.textContent = Help.t(key) || TAB_PAGE_TITLES[btn.dataset.tab] || btn.dataset.tab;
+    });
+    renderHeaderLangSelector();
+  }
+
+  // Persistent language picker mounted in the header — visible on every tab.
+  function renderHeaderLangSelector() {
+    const host = document.getElementById("header-lang");
+    if (!host || !Help) return;
+    clear(host);
+    const sel = el("select", { class: "lang-select", "aria-label": Help.t("lang_field_label") || "Language" },
+      Help.availableLangs().map((code) =>
+        el("option", { value: code, selected: code === Help.effectiveLang() ? "selected" : null, text: Help.LANG_LABELS[code] })));
+    sel.addEventListener("change", () => applyLanguageChange(sel.value));
+    host.appendChild(sel);
   }
 
   // Resolve a supported currency from a geo-IP result ("" when none).
@@ -1737,14 +1819,14 @@
     const madhab = Store.getMadhab();
 
     const mp = el("div", { class: "panel" });
-    mp.appendChild(el("h2", { text: "Calculation school (madhhab)" }));
-    mp.appendChild(el("p", { class: "sub", text: "Affects nisab basis, jewelry exemption, and debt deduction." }));
+    mp.appendChild(el("h2", { text: Help.t("school_panel_title") }));
+    mp.appendChild(el("p", { class: "sub", text: Help.t("school_panel_sub") }));
     const madhabSel = el("select", null, Object.keys(ZK.MADHAB_RULES).map((k) => el("option", { value: k, selected: k === madhab ? "selected" : null, text: ZK.MADHAB_RULES[k].label })));
-    madhabSel.addEventListener("change", () => { Store.setMadhab(madhabSel.value); toast("School updated", "ok"); refreshAll(); });
-    mp.appendChild(field("School", madhabSel));
+    madhabSel.addEventListener("change", () => { Store.setMadhab(madhabSel.value); toast(Help.t("toast_school_updated"), "ok"); refreshAll(); });
+    mp.appendChild(field(Help.t("school_field_label"), madhabSel));
     const rateLangSel = helpLangSelectNode();
     if (rateLangSel) {
-      mp.appendChild(field("Form help language", rateLangSel, "Language of the guidance text inside forms. Options follow the selected currency."));
+      mp.appendChild(field(Help.t("lang_field_label"), rateLangSel, Help.t("lang_field_help")));
     }
     panel.appendChild(mp);
 
@@ -1755,7 +1837,7 @@
     const cur = curCode();
     const curSel = currencySelectNode();
     curSel.addEventListener("change", () => applyCurrencyChange(curSel.value));
-    rp.appendChild(field("Currency", curSel));
+    rp.appendChild(field(Help.t("currency_label"), curSel));
     rp.appendChild(el("div", { class: "help", text: "Detected from your device's locale/location on first use \u2014 change it here if that guess is wrong. Changing it refetches today's metal rates in the new currency; asset values and diamond rates you entered are not converted." }));
     if (Rates && Rates.detectLocation) {
       const detectBtn = el("button", { class: "link", text: "Detect currency from my location" });
@@ -2133,9 +2215,25 @@
     const prefMadhab = madhabSelectNode();
     let curTouched = false;
 
+    const prefsTitle = el("div", { class: "welcome-prefs-title", text: Help.t("prefs_title") });
+    const curField = field(Help.t("currency_label"), prefCur);
+    const langLabelNode = el("label", { text: Help.t("lang_field_label") });
+    const schoolField = field(Help.t("school_field_label"), prefMadhab);
+
+    // This modal isn't part of a tab panel, so applyLanguageChange's
+    // refreshAll() won't touch it — re-translate its own labels here.
+    function refreshWelcomePrefsChrome() {
+      prefsTitle.textContent = Help.t("prefs_title");
+      const curLabel = curField.querySelector("label");
+      if (curLabel) curLabel.textContent = Help.t("currency_label");
+      langLabelNode.textContent = Help.t("lang_field_label");
+      const schoolLabel = schoolField.querySelector("label");
+      if (schoolLabel) schoolLabel.textContent = Help.t("school_field_label");
+    }
+
     function renderPrefLang() {
       clear(prefLangWrap);
-      const sel = helpLangSelectNode();
+      const sel = helpLangSelectNode(refreshWelcomePrefsChrome);
       if (sel) prefLangWrap.appendChild(sel);
     }
     renderPrefLang();
@@ -2149,11 +2247,11 @@
 
     const detectNote = el("div", { class: "help", text: "Guessed from your device — checking your location…" });
     const prefsPanel = el("div", { class: "welcome-prefs" }, [
-      el("div", { class: "welcome-prefs-title", text: "Currency, language & school" }),
+      prefsTitle,
       el("div", { class: "field-row3" }, [
-        field("Currency", prefCur),
-        el("div", { class: "field" }, [el("label", { text: "Form help language" }), prefLangWrap]),
-        field("School (madhhab)", prefMadhab),
+        curField,
+        el("div", { class: "field" }, [langLabelNode, prefLangWrap]),
+        schoolField,
       ]),
       detectNote,
     ]);
@@ -2562,6 +2660,7 @@
     opts = opts || {};
     baseline = ZK.zakatAsOf();
     setupTabs();
+    renderChrome();
     renderBaselineMeta();
     renderFamilyNameMeta();
     renderDashboard();
