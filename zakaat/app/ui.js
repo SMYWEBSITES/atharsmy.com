@@ -476,6 +476,24 @@
     container.appendChild(gauge);
   }
 
+  // --- Asset category icons ---
+  const CATEGORY_ICONS = {
+    Cash:        "💰",
+    Gold:        "🪙",
+    Silver:      "🥈",
+    Platinum:    "🔘",
+    Diamond:     "💎",
+    Stocks:      "📈",
+    PF:          "🏦",
+    Business:    "💼",
+    Partnership: "🤝",
+    Property:    "🏠",
+    Agriculture: "🌾",
+    Livestock:   "🐄",
+    Rikaz:       "⚱️",
+    Liabilities: "💳",
+  };
+
   // --- Asset discovery checklist ---
   const ASSET_CHECKLIST = [
     { label: "Bank savings, fixed deposits, or cash at home",   hint: "All savings accounts, current accounts, FDs, digital wallets, cash in hand.", category: "Cash" },
@@ -496,7 +514,9 @@
 
   function showAssetChecklist(memberId) {
     const rows = ASSET_CHECKLIST.map((item) => {
+      const icon = CATEGORY_ICONS[item.category] || "";
       const row = el("div", { class: "checklist-row" }, [
+        el("div", { class: "checklist-icon", text: icon }),
         el("div", { class: "checklist-info" }, [
           el("div", { class: "checklist-label", text: item.label }),
           el("div", { class: "checklist-hint", text: item.hint }),
@@ -1455,7 +1475,7 @@
           if (detail) detailCell.appendChild(document.createTextNode(detail));
           if (hawlBadge) detailCell.appendChild(hawlBadge);
           return el("tr", null, [
-            el("td", null, el("span", { class: "pill gray", text: a.category })),
+            el("td", null, el("span", { class: "pill gray", text: (CATEGORY_ICONS[a.category] ? CATEGORY_ICONS[a.category] + " " : "") + a.category })),
             descCell,
             detailCell,
             el("td", { class: "num", text: ZK.fmtINR(val) }),
