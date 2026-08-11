@@ -655,7 +655,7 @@
     clear(panel);
 
     const hero = el("div", { class: "hero" }, [
-      el("img", { class: "hero-img", src: "assets/kaaba-hero.jpg", alt: "The Kaaba, Masjid al-Haram" }),
+      el("img", { class: "hero-img", src: "assets/kaaba-hero.jpg", alt: "The Kaaba, Masjid al-Haram", loading: "lazy" }),
       el("div", { class: "hero-overlay" }, [
         el("div", { class: "hero-title", text: Help.t("app_title") }),
         el("div", { class: "hero-sub", text: Help.t("hero_sub") }),
@@ -2503,6 +2503,9 @@
 
   // --- Backup tab (export, sync, replace) ---
   function renderBackup() {
+    // Pre-warm SheetJS in the background as soon as the tab opens, so it's
+    // ready before the user clicks Download (saves ~500ms on the first click).
+    if (Excel && Excel.loadXlsx) Excel.loadXlsx();
     const panel = document.getElementById("tab-backup");
     clear(panel);
 
@@ -2510,8 +2513,8 @@
     exportPanel.appendChild(el("h2", { text: "Export" }));
     exportPanel.appendChild(el("p", { class: "sub", text: "Download a full Excel backup or a readable Zakat report." }));
     exportPanel.appendChild(el("div", { class: "btn-grid" }, [
-      el("button", { class: "btn", text: "Download backup", onclick: () => { try { Excel.exportBackup(); trackEvent("backup_export", { type: "full" }); toast("Backup downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
-      el("button", { class: "btn secondary", text: "Download report", onclick: () => { try { Excel.exportReport(); trackEvent("backup_export", { type: "report" }); toast("Report downloaded", "ok"); } catch (e) { toast("Export failed: " + e.message, "err"); } } }),
+      el("button", { class: "btn", text: "Download backup", onclick: () => { Excel.exportBackup().then(() => { trackEvent("backup_export", { type: "full" }); toast("Backup downloaded", "ok"); }).catch((e) => toast("Export failed: " + e.message, "err")); } }),
+      el("button", { class: "btn secondary", text: "Download report", onclick: () => { Excel.exportReport().then(() => { trackEvent("backup_export", { type: "report" }); toast("Report downloaded", "ok"); }).catch((e) => toast("Export failed: " + e.message, "err")); } }),
     ]));
     panel.appendChild(exportPanel);
     panel.appendChild(renderDrivePanel());

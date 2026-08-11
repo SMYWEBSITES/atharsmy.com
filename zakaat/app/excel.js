@@ -10,6 +10,21 @@
   const ZK = global.ZK;
   const Store = global.ZKStore;
 
+  // ── Lazy-load SheetJS (932 KB) — only needed when Backup tab is used ────────
+  let _xlsxReady = null;
+  function loadXlsx() {
+    if (global.XLSX) return Promise.resolve();
+    if (_xlsxReady) return _xlsxReady;
+    _xlsxReady = new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = "vendor/xlsx.full.min.js";
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error("Could not load the backup library. Check your connection and try again.")); };
+      document.head.appendChild(s);
+    });
+    return _xlsxReady;
+  }
+
   const BACKUP_FORMAT_VERSION = 2;
   const BACKUP_TYPE = "zakat-household";
   const B64_CHUNK_SIZE = 30000;
@@ -154,15 +169,19 @@
   }
 
   function buildBackupBuffer() {
-    const XLSX = global.XLSX;
-    const wb = buildBackupWorkbook();
-    return XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    return loadXlsx().then(function () {
+      const XLSX = global.XLSX;
+      const wb = buildBackupWorkbook();
+      return XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    });
   }
 
   function exportBackup() {
-    const XLSX = global.XLSX;
-    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    XLSX.writeFile(buildBackupWorkbook(), "zakat_backup_" + stamp + ".xlsx");
+    return loadXlsx().then(function () {
+      const XLSX = global.XLSX;
+      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      XLSX.writeFile(buildBackupWorkbook(), "zakat_backup_" + stamp + ".xlsx");
+    });
   }
 
   // --- Readable Zakat report (mirrors server app/excel_export.py) ---
@@ -271,10 +290,12 @@
   }
 
   function exportReport() {
-    const XLSX = global.XLSX;
-    const wb = buildReportWorkbook();
-    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    XLSX.writeFile(wb, "zakat_report_" + stamp + ".xlsx");
+    return loadXlsx().then(function () {
+      const XLSX = global.XLSX;
+      const wb = buildReportWorkbook();
+      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      XLSX.writeFile(wb, "zakat_report_" + stamp + ".xlsx");
+    });
   }
 
   // --- Import ---
@@ -386,15 +407,17 @@
   }
 
   function importBackupFromArrayBuffer(buf) {
-    try {
-      const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf;
-      const parsed = parseBackupArrayBuffer(bytes);
-      const counts = Store.replaceFromBackup(parsed);
-      ZK.setDisplayCurrency(Store.getCurrency()); // backup may carry a different currency
-      return Promise.resolve(counts);
-    } catch (err) {
-      return Promise.reject(err);
-    }
+    return loadXlsx().then(function () {
+      try {
+        const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf;
+        const parsed = parseBackupArrayBuffer(bytes);
+        const counts = Store.replaceFromBackup(parsed);
+        ZK.setDisplayCurrency(Store.getCurrency()); // backup may carry a different currency
+        return counts;
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    });
   }
 
   function importBackupFromFile(file) {
@@ -409,6 +432,7 @@
   }
 
   global.ZKExcel = {
+    loadXlsx,
     exportBackup,
     exportReport,
     buildBackupBuffer,

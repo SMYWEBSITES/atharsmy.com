@@ -10,7 +10,7 @@
  * Bump CACHE_VERSION when deploying breaking changes so old caches are evicted.
  */
 
-const CACHE_VERSION = "zakat-v5";
+const CACHE_VERSION = "zakat-v6";
 const FONT_CACHE    = "zakat-fonts-v1";
 
 // App shell — everything the app needs to boot offline
@@ -28,11 +28,9 @@ const APP_SHELL = [
   "/zakaat/app/excel.js",
   "/zakaat/app/gdrive.js",
   "/zakaat/assets/logo.svg",
-  "/zakaat/assets/logo.png",
   "/zakaat/assets/icon-192.png",
   "/zakaat/assets/icon-512.png",
   "/zakaat/assets/kaaba-hero.jpg",
-  "/zakaat/vendor/xlsx.full.min.js",
   "/js/analytics.js",
   "/js/gtag-bootstrap.js",
 ];

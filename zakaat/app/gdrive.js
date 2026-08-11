@@ -548,11 +548,13 @@
     return ensureToken()
       .then(() => prepareCurrentMonth(date))
       .then((ctx) => {
-        const bytes = new Uint8Array(Excel.buildBackupBuffer());
-        return uploadXlsx(ctx.folderId, ctx.fileName, bytes, ctx.existing && ctx.existing.id).then((res) => ({
-          res: res,
-          ctx: ctx,
-        }));
+        return Excel.buildBackupBuffer().then((buf) => {
+          const bytes = new Uint8Array(buf);
+          return uploadXlsx(ctx.folderId, ctx.fileName, bytes, ctx.existing && ctx.existing.id).then((res) => ({
+            res: res,
+            ctx: ctx,
+          }));
+        });
       })
       .then(({ res, ctx }) => {
         const when = new Date().toISOString();
