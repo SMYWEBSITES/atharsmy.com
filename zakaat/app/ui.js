@@ -2556,15 +2556,52 @@
       return panel;
     }
 
+    const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+
+    // ── Setup instructions (platform-aware) ───────────────────────────────────
+    const setupHtml = isNative
+      ? "Mobile sign-in uses a <strong>Desktop app</strong> OAuth client (not the web client).<br>" +
+        "1. <a href=\"https://console.cloud.google.com\" target=\"_blank\" rel=\"noopener\">console.cloud.google.com</a> " +
+          "→ <em>APIs &amp; Services → Credentials → Create → OAuth client → <strong>Desktop app</strong></em><br>" +
+        "2. Name it <em>Zakat Mobile</em> → Create → copy the <strong>Client ID</strong><br>" +
+        "3. Paste it into the <strong>Mobile Client ID</strong> field below → tap <em>Connect Google Drive</em><br>" +
+        "4. <em>OAuth consent screen → Test users</em> → add your Gmail address"
+      : "1. <em>Credentials</em> → Web client → <em>Authorized JavaScript origins</em>: <code>" + Drive.getPageOrigin() + "</code><br>" +
+        "2. <em>OAuth consent screen</em> → <em>Test users</em> → add each family Gmail (e.g. <code>smy.altamash@gmail.com</code>).<br>" +
+        "3. Privacy policy: <a href=\"https://atharsmy.com/privacy.html\" target=\"_blank\" rel=\"noopener noreferrer\">atharsmy.com/privacy.html</a>";
+
     panel.appendChild(el("details", { class: "setup-details" }, [
       el("summary", { text: "One-time Google Cloud setup" }),
-      el("div", {
-        class: "setup-body",
-        html: "1. <em>Credentials</em> → Web client → <em>Authorized JavaScript origins</em>: <code>" + Drive.getPageOrigin() + "</code><br>" +
-          "2. <em>OAuth consent screen</em> → <em>Test users</em> → add each family Gmail (e.g. <code>smy.altamash@gmail.com</code>).<br>" +
-          "3. Privacy policy: <a href=\"../privacy.html\" target=\"_blank\" rel=\"noopener noreferrer\">atharsmy.com/privacy.html</a>",
-      }),
+      el("div", { class: "setup-body", html: setupHtml }),
     ]));
+
+    // ── Mobile Client ID field (only shown inside the native app) ────────────
+    if (isNative) {
+      const mobileIdWrap = el("div", { class: "subpanel" });
+      const mobileIdLabel = el("label", { class: "field-label", text: "Mobile OAuth Client ID" });
+      const mobileIdInput = el("input", {
+        type: "text",
+        class: "text-input",
+        placeholder: "Paste Desktop app Client ID from Google Cloud Console",
+        value: Drive.getMobileClientId() !== Drive.getClientId() ? Drive.getMobileClientId() : "",
+      });
+      const mobileIdSave = el("button", { class: "btn secondary", text: "Save" });
+      const mobileIdHelp = el("div", {
+        class: "help",
+        text: "Required for Google Drive on Android and iOS. Create a Desktop app client in Google Cloud Console (see setup above).",
+      });
+      mobileIdSave.addEventListener("click", () => {
+        const val = mobileIdInput.value.trim();
+        if (!val) { toast("Paste a Client ID first", "err"); return; }
+        Drive.setMobileClientId(val);
+        toast("Mobile Client ID saved", "ok");
+      });
+      const mobileIdRow = el("div", { class: "field-row" }, [mobileIdInput, mobileIdSave]);
+      mobileIdWrap.appendChild(mobileIdLabel);
+      mobileIdWrap.appendChild(mobileIdRow);
+      mobileIdWrap.appendChild(mobileIdHelp);
+      panel.appendChild(mobileIdWrap);
+    }
 
     const status = el("div", { class: "notice compact", text: "" });
     function setStatus() {

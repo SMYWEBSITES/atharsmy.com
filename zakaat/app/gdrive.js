@@ -14,6 +14,13 @@
  *  2. Name it "Zakat Mobile" — no redirect URI config needed for Desktop type
  *  3. Copy the new client ID and paste it into the Backup tab's
  *     "Mobile OAuth Client ID" field (or set MOBILE_CLIENT_ID below)
+ *
+ * Token persistence (mobile):
+ *  Access token + refresh token are stored in localStorage under TOKEN_KEY so
+ *  they survive app restarts and WebView reloads within the same device.
+ *  Refresh tokens let the app silently renew without asking the user to sign in
+ *  again (access_type=offline). The refresh token is only cleared on explicit
+ *  disconnect() or when Google revokes it.
  */
 (function (global) {
   "use strict";
@@ -22,6 +29,8 @@
   const GIS_SRC = "https://accounts.google.com/gsi/client";
   const SCOPE = "https://www.googleapis.com/auth/drive.file";
   const CFG_KEY = "zakat_gdrive_cfg_v1";
+  // Separate key for the token so clearing it doesn't disturb the Drive config.
+  const TOKEN_KEY = "zakat_gdrive_token_v1";
 
   // ── Mobile OAuth (PKCE) constants ──────────────────────────────────────────
   // Redirect URI registered as a custom scheme — Android catches it via the
@@ -39,12 +48,14 @@
 
   let accessToken = null;
   let tokenExpiry = 0;
+  let refreshToken = null;   // mobile only — persisted to localStorage
   let tokenClient = null;
   let gisLoading = null;
   let autoTimer = null;
   let statusCb = null;
   let pendingConnect = null;
   let activeConnect = null;
+  let refreshing = null;     // in-flight refresh promise (deduplicate concurrent calls)
   const connectListeners = [];
 
   // ── Platform detection ─────────────────────────────────────────────────────
@@ -54,6 +65,36 @@
 
   function capacitorPlugins() {
     return (global.Capacitor && global.Capacitor.Plugins) || null;
+  }
+
+  // ── Token persistence (mobile) ─────────────────────────────────────────────
+  // Saves access token + expiry + optional refresh token to localStorage so
+  // they survive app restarts and WebView reloads on the same device.
+  function persistToken(data) {
+    try {
+      localStorage.setItem(TOKEN_KEY, JSON.stringify(data));
+    } catch (e) { /* quota or private-browsing — ignore */ }
+  }
+
+  function clearPersistedToken() {
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+    refreshToken = null;
+  }
+
+  // Called once at module init. Restores in-memory token state from a prior
+  // session without requiring the user to sign in again.
+  function loadPersistedToken() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(TOKEN_KEY) || "{}") || {};
+      if (stored.refresh_token) {
+        // Always restore the refresh token — it lets us silently renew later.
+        refreshToken = stored.refresh_token;
+      }
+      if (stored.access_token && stored.expiry && Date.now() < stored.expiry - 5000) {
+        accessToken = stored.access_token;
+        tokenExpiry = stored.expiry;
+      }
+    } catch (e) { /* corrupt storage — ignore */ }
   }
 
   // ── PKCE helpers ───────────────────────────────────────────────────────────
@@ -109,7 +150,12 @@
           "&code_challenge="        + encodeURIComponent(challenge) +
           "&code_challenge_method=S256" +
           "&state="                 + encodeURIComponent(state) +
-          "&access_type=online";
+          // offline → Google issues a refresh token so the app can renew
+          // silently after the 1-hour access token expires.
+          // prompt=consent ensures Google always returns the refresh token
+          // (it is otherwise only sent on the very first authorization).
+          "&access_type=offline" +
+          "&prompt=consent";
 
         var settled = false;
         var listenerHandle = null;
@@ -169,6 +215,15 @@
               if (token.access_token) {
                 accessToken  = token.access_token;
                 tokenExpiry  = Date.now() + (Number(token.expires_in) || 3600) * 1000;
+                // Persist refresh token if Google returned one (access_type=offline).
+                // Google only returns it on first authorization or when prompt=consent
+                // is set; preserve any previously stored refresh token otherwise.
+                if (token.refresh_token) refreshToken = token.refresh_token;
+                persistToken({
+                  access_token:  accessToken,
+                  expiry:        tokenExpiry,
+                  refresh_token: refreshToken || null,
+                });
                 if (opts && opts.interactive) setDriveEnabled(true);
                 finish(resolve, { access_token: accessToken });
                 notifyConnectChange();
@@ -435,6 +490,49 @@
     return gisLoading;
   }
 
+  // ── Refresh token (mobile only) ────────────────────────────────────────────
+  // Silently gets a new access token using the stored refresh token.
+  // Deduplicates concurrent calls so only one fetch is in-flight at a time.
+  function refreshAccessToken() {
+    if (!refreshToken) return Promise.reject(new Error("No refresh token stored — sign in again."));
+    if (refreshing) return refreshing;
+
+    var clientId = getMobileClientId();
+    refreshing = fetch(OAUTH_TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type:    "refresh_token",
+        refresh_token: refreshToken,
+        client_id:     clientId,
+      }).toString(),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (token) {
+        if (token.access_token) {
+          accessToken = token.access_token;
+          tokenExpiry = Date.now() + (Number(token.expires_in) || 3600) * 1000;
+          // Google may rotate the refresh token; update it if a new one is given.
+          if (token.refresh_token) refreshToken = token.refresh_token;
+          persistToken({
+            access_token:  accessToken,
+            expiry:        tokenExpiry,
+            refresh_token: refreshToken,
+          });
+          notifyConnectChange();
+          return { access_token: accessToken };
+        }
+        // Refresh token revoked / expired — clear it and ask user to sign in.
+        clearPersistedToken();
+        accessToken = null;
+        tokenExpiry = 0;
+        throw new Error(token.error_description || token.error || "Token refresh failed — please sign in again.");
+      })
+      .finally(function () { refreshing = null; });
+
+    return refreshing;
+  }
+
   function connect(opts) {
     opts = opts || {};
     if (isConnected()) {
@@ -559,6 +657,7 @@
     const tok = accessToken;
     accessToken = null;
     tokenExpiry = 0;
+    clearPersistedToken(); // clears refreshToken too
     if (tok && global.google && global.google.accounts && global.google.accounts.oauth2) {
       try {
         global.google.accounts.oauth2.revoke(tok, () => {});
@@ -571,6 +670,19 @@
   function ensureToken(opts) {
     opts = opts || {};
     if (isConnected()) return Promise.resolve();
+
+    // On mobile: try the refresh token first before bothering the user.
+    if (isCapacitorNative() && refreshToken) {
+      return refreshAccessToken().catch(function () {
+        // Refresh failed (token revoked). Fall through to interactive sign-in
+        // only if the caller explicitly requested it; otherwise surface the error.
+        if (!getDriveEnabled()) {
+          return Promise.reject(new Error("Sign in to Google Drive first."));
+        }
+        return Promise.reject(new Error("Google session expired — tap Connect again to sign in."));
+      });
+    }
+
     if (!getDriveEnabled() && !opts.resume) {
       return Promise.reject(new Error("Sign in to Google Drive first."));
     }
@@ -829,6 +941,10 @@
     }, 2000);
   }
 
+  // Restore any token saved in a prior session as soon as the module loads.
+  // This runs synchronously before any caller can call connect() or ensureToken().
+  loadPersistedToken();
+
   global.ZKDrive = {
     isConfigured,
     isConnected,
@@ -860,6 +976,7 @@
     maybeSyncMonthRollover,
     prepareCurrentMonth,
     setStatusCallback,
+    refreshAccessToken,
     SCOPE,
     FOLDER_FAMILY,
     FOLDER_ZAKAAT,
