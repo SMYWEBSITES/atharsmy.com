@@ -1,6 +1,6 @@
 {
   "appId": "com.atharsmy.zakat",
-  "appName": "Household Zakat Calculator",
+  "appName": "Zakaat Calculator",
   "webDir": "zakaat",
   "server": {
     "hostname": "zakaat.app",
