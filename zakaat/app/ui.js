@@ -14,6 +14,11 @@
   let baseline = null;
   let yearlySelected = null; // selected calendar year on the Yearly Review tab
 
+  // dashboard_view event deduplication — only fire when financial values actually
+  // change, debounced so rapid refreshAll() calls (asset edits etc.) collapse.
+  let _dashviewTimer = null;
+  let _lastDashviewKey = null;
+
   // --- DOM helpers ---
   function el(tag, attrs, children) {
     const node = document.createElement(tag);
@@ -664,15 +669,27 @@
     renderNisabGauge(summaryPanel, household);
     panel.appendChild(summaryPanel);
 
-    // Track dashboard view with financial summary (integers, in selected currency)
-    trackEvent("dashboard_view", {
-      family_name:       Store.getFamilyName() || "",
-      currency:          Store.getCurrency()   || "INR",
-      member_count:      members.length,
-      total_wealth:      Math.round(totalWealth),
-      zakatable_amount:  Math.round(totalZakatable),
-      zakat_due:         Math.round(household.total_zakat_inr),
-    });
+    // Track dashboard view with financial summary — debounced and deduplicated
+    // so rapid refreshAll() calls (every asset/member save) don't multiply the
+    // values in GA4. The event only fires when the numbers actually change.
+    const _dwKey = [
+      Store.getFamilyName(), Store.getCurrency(), members.length,
+      Math.round(totalWealth), Math.round(totalZakatable), Math.round(household.total_zakat_inr),
+    ].join("|");
+    if (_dwKey !== _lastDashviewKey) {
+      clearTimeout(_dashviewTimer);
+      _dashviewTimer = setTimeout(() => {
+        _lastDashviewKey = _dwKey;
+        trackEvent("dashboard_view", {
+          family_name:      Store.getFamilyName() || "",
+          currency:         Store.getCurrency()   || "INR",
+          member_count:     members.length,
+          total_wealth:     Math.round(totalWealth),
+          zakatable_amount: Math.round(totalZakatable),
+          zakat_due:        Math.round(household.total_zakat_inr),
+        });
+      }, 2000);
+    }
 
     // Baseline projections and the per-member table live on Analytics;
     // the dashboard stays focused on totals + family & asset management.
