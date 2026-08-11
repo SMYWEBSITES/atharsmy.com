@@ -655,7 +655,7 @@
     clear(panel);
 
     const hero = el("div", { class: "hero" }, [
-      el("img", { class: "hero-img", src: "assets/kaaba-hero.png", alt: "The Kaaba, Masjid al-Haram" }),
+      el("img", { class: "hero-img", src: "assets/kaaba-hero.jpg", alt: "The Kaaba, Masjid al-Haram" }),
       el("div", { class: "hero-overlay" }, [
         el("div", { class: "hero-title", text: Help.t("app_title") }),
         el("div", { class: "hero-sub", text: Help.t("hero_sub") }),

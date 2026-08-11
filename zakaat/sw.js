@@ -31,7 +31,7 @@ const APP_SHELL = [
   "/zakaat/assets/logo.png",
   "/zakaat/assets/icon-192.png",
   "/zakaat/assets/icon-512.png",
-  "/zakaat/assets/kaaba-hero.png",
+  "/zakaat/assets/kaaba-hero.jpg",
   "/zakaat/vendor/xlsx.full.min.js",
   "/js/analytics.js",
   "/js/gtag-bootstrap.js",
