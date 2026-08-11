@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Capacitor native projects (generated — run `npx cap sync` to recreate)
+android/
+ios/
+
+# Build outputs
+dist/
+
+# Environment / secrets
+*.jks
+*.keystore
+local.properties
+android/local.properties
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

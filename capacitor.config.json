@@ -1,0 +1,12 @@
+{
+  "appId": "com.atharsmy.zakat",
+  "appName": "Household Zakat Calculator",
+  "webDir": "zakaat",
+  "server": {
+    "hostname": "zakaat.app",
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}
