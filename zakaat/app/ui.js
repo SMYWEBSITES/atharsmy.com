@@ -479,7 +479,7 @@
   // --- Asset category icons ---
   const CATEGORY_ICONS = {
     Cash:        "💰",
-    Gold:        "🪙",
+    Gold:        "🥇",
     Silver:      "🥈",
     Platinum:    "🔘",
     Diamond:     "💎",
