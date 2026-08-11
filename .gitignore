@@ -1,9 +1,12 @@
 # Dependencies
 node_modules/
 
-# Capacitor native projects (generated — run `npx cap sync` to recreate)
+# Capacitor Android project (generated — run `npm install && npx cap sync android` to recreate)
 android/
-ios/
+
+# iOS: tracked in git (contains custom Info.plist, AppIcon, Podfile.lock)
+# Regenerate with: npm install && npx cap add ios && npx cap sync ios
+# Then manually re-apply customisations from ios/App/App/Info.plist and Assets.xcassets
 
 # Build outputs
 dist/
