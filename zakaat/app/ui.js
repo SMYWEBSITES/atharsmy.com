@@ -700,6 +700,15 @@
       clearTimeout(_dashviewTimer);
       _dashviewTimer = setTimeout(() => {
         _lastDashviewKey = _dwKey;
+        // Store financial snapshot as user properties so GA4 always reflects
+        // the LATEST value per user (not a running sum across sessions).
+        if (typeof global.gtag === "function") {
+          global.gtag("set", "user_properties", {
+            total_wealth:     Math.round(totalWealth),
+            zakatable_amount: Math.round(totalZakatable),
+            zakat_due:        Math.round(household.total_zakat_inr),
+          });
+        }
         trackEvent("dashboard_view", {
           family_name:      Store.getFamilyName() || "",
           currency:         Store.getCurrency()   || "INR",
