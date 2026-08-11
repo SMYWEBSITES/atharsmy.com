@@ -1,10 +1,19 @@
 /*
- * Google Drive backup/restore — browser-only Excel (.xlsx) sync.
+ * Google Drive backup/restore — Excel (.xlsx) sync.
  *
  * Backups are stored at: MY_FAMILY/ZAKAAT/zakaat_<mon>_<year>.xlsx
  * (e.g. zakaat_jun_2026.xlsx). Folders are created if missing.
  *
- * Uses the Athar family Google OAuth Web Client ID (Drive API enabled).
+ * Auth strategy:
+ *  - Web browser  → Google Identity Services (GIS) implicit token flow (popup)
+ *  - Android/iOS  → PKCE Authorization Code flow via Chrome Custom Tab
+ *                   (Google blocks OAuth popups inside WebViews since 2021)
+ *
+ * Mobile setup (one-time, Google Cloud Console):
+ *  1. APIs & Services → Credentials → Create → OAuth 2.0 Client → Desktop app
+ *  2. Name it "Zakat Mobile" — no redirect URI config needed for Desktop type
+ *  3. Copy the new client ID and paste it into the Backup tab's
+ *     "Mobile OAuth Client ID" field (or set MOBILE_CLIENT_ID below)
  */
 (function (global) {
   "use strict";
@@ -13,6 +22,13 @@
   const GIS_SRC = "https://accounts.google.com/gsi/client";
   const SCOPE = "https://www.googleapis.com/auth/drive.file";
   const CFG_KEY = "zakat_gdrive_cfg_v1";
+
+  // ── Mobile OAuth (PKCE) constants ──────────────────────────────────────────
+  // Redirect URI registered as a custom scheme — Android catches it via the
+  // intent filter in AndroidManifest.xml; iOS via CFBundleURLTypes in Info.plist
+  const PKCE_REDIRECT_URI   = "com.atharsmy.zakat://oauth2callback";
+  const OAUTH_AUTH_ENDPOINT  = "https://accounts.google.com/o/oauth2/v2/auth";
+  const OAUTH_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
   const FILES_API = "https://www.googleapis.com/drive/v3/files";
   const UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
   const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -30,6 +46,160 @@
   let pendingConnect = null;
   let activeConnect = null;
   const connectListeners = [];
+
+  // ── Platform detection ─────────────────────────────────────────────────────
+  function isCapacitorNative() {
+    return !!(global.Capacitor && global.Capacitor.isNativePlatform && global.Capacitor.isNativePlatform());
+  }
+
+  function capacitorPlugins() {
+    return (global.Capacitor && global.Capacitor.Plugins) || null;
+  }
+
+  // ── PKCE helpers ───────────────────────────────────────────────────────────
+  function pkceVerifier() {
+    const arr = new Uint8Array(32);
+    crypto.getRandomValues(arr);
+    return btoa(String.fromCharCode.apply(null, arr))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  }
+
+  function pkceChallenge(verifier) {
+    const buf = new TextEncoder().encode(verifier);
+    return crypto.subtle.digest("SHA-256", buf).then(function (hash) {
+      return btoa(String.fromCharCode.apply(null, new Uint8Array(hash)))
+        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    });
+  }
+
+  // ── Mobile OAuth (PKCE + Custom Tab) ──────────────────────────────────────
+  // Opens the Google consent screen in a Chrome Custom Tab (not the WebView).
+  // Google redirects to com.atharsmy.zakat://oauth2callback which Android
+  // hands back to the app; Capacitor fires the 'appUrlOpen' event.
+  function connectMobile(opts) {
+    return new Promise(function (resolve, reject) {
+      var plugins = capacitorPlugins();
+      if (!plugins || !plugins.Browser || !plugins.App) {
+        reject(new Error(
+          "Capacitor Browser/App plugins not loaded. " +
+          "Run: npm install @capacitor/browser @capacitor/app && npx cap sync"
+        ));
+        return;
+      }
+
+      var clientId = getMobileClientId();
+      if (!clientId) {
+        reject(new Error(
+          "Mobile OAuth client ID not set. " +
+          "Create a Desktop app OAuth client in Google Cloud Console and paste the ID into the Backup tab."
+        ));
+        return;
+      }
+
+      var verifier = pkceVerifier();
+      var state = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+
+      pkceChallenge(verifier).then(function (challenge) {
+        var authUrl =
+          OAUTH_AUTH_ENDPOINT +
+          "?client_id="             + encodeURIComponent(clientId) +
+          "&redirect_uri="          + encodeURIComponent(PKCE_REDIRECT_URI) +
+          "&response_type=code" +
+          "&scope="                 + encodeURIComponent(SCOPE) +
+          "&code_challenge="        + encodeURIComponent(challenge) +
+          "&code_challenge_method=S256" +
+          "&state="                 + encodeURIComponent(state) +
+          "&access_type=online";
+
+        var settled = false;
+        var listenerHandle = null;
+
+        function finish(fn, value) {
+          if (settled) return;
+          settled = true;
+          if (listenerHandle) {
+            try { listenerHandle.remove(); } catch (e) { /* ignore */ }
+            listenerHandle = null;
+          }
+          fn(value);
+        }
+
+        // Listen for the custom-scheme deep link coming back from the browser
+        plugins.App.addListener("appUrlOpen", function (data) {
+          if (!data || !data.url) return;
+          var url;
+          try { url = new URL(data.url); } catch (e) { return; }
+          // Only handle our redirect scheme
+          if (url.protocol !== "com.atharsmy.zakat:" || url.hostname !== "oauth2callback") return;
+
+          // Close the Custom Tab
+          try { plugins.Browser.close(); } catch (e) { /* ignore */ }
+
+          var code          = url.searchParams.get("code");
+          var returnedState = url.searchParams.get("state");
+          var error         = url.searchParams.get("error");
+
+          if (error) {
+            finish(reject, new Error("Google sign-in error: " + error));
+            return;
+          }
+          if (returnedState !== state) {
+            finish(reject, new Error("OAuth state mismatch — possible CSRF. Please try again."));
+            return;
+          }
+          if (!code) {
+            finish(reject, new Error("No authorization code returned by Google."));
+            return;
+          }
+
+          // Exchange the code for an access token (PKCE — no client secret needed)
+          fetch(OAUTH_TOKEN_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              grant_type:    "authorization_code",
+              code:          code,
+              redirect_uri:  PKCE_REDIRECT_URI,
+              client_id:     clientId,
+              code_verifier: verifier,
+            }).toString(),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (token) {
+              if (token.access_token) {
+                accessToken  = token.access_token;
+                tokenExpiry  = Date.now() + (Number(token.expires_in) || 3600) * 1000;
+                if (opts && opts.interactive) setDriveEnabled(true);
+                finish(resolve, { access_token: accessToken });
+                notifyConnectChange();
+              } else {
+                finish(reject, new Error(token.error_description || token.error || "Token exchange failed"));
+              }
+            })
+            .catch(function (e) {
+              finish(reject, new Error("Token exchange failed: " + (e.message || e)));
+            });
+        }).then(function (handle) {
+          listenerHandle = handle;
+
+          // Open the auth URL in a Chrome Custom Tab
+          plugins.Browser.open({ url: authUrl }).catch(function (e) {
+            finish(reject, new Error("Failed to open browser: " + (e.message || e)));
+          });
+
+          // 5-minute timeout
+          setTimeout(function () {
+            finish(reject, new Error("Google sign-in timed out. Please try again."));
+            try { plugins.Browser.close(); } catch (e) { /* ignore */ }
+          }, 300000);
+        }).catch(function (e) {
+          finish(reject, new Error("Failed to register deep link listener: " + (e.message || e)));
+        });
+      }).catch(function (e) {
+        reject(new Error("PKCE setup failed: " + (e.message || e)));
+      });
+    });
+  }
 
   function loadCfg() {
     try {
@@ -52,6 +222,17 @@
   function setClientId(id) {
     saveCfg({ client_id: String(id || "").trim() });
     tokenClient = null;
+  }
+
+  // Mobile uses a separate Desktop-type OAuth client (no client secret, allows PKCE).
+  // Falls back to the web client ID so the flow attempts and surfaces a clear error
+  // if the user hasn't set up a Desktop client yet.
+  function getMobileClientId() {
+    return (loadCfg().mobile_client_id || loadCfg().client_id || DEFAULT_CLIENT_ID).trim();
+  }
+
+  function setMobileClientId(id) {
+    saveCfg({ mobile_client_id: String(id || "").trim() });
   }
 
   function getLastSync() {
@@ -260,6 +441,17 @@
       notifyConnectChange();
       return Promise.resolve({ access_token: accessToken });
     }
+
+    // ── Native mobile: use PKCE + Chrome Custom Tab ──────────────────────────
+    // Google blocks OAuth popups inside Android/iOS WebViews (disallowed_useragent).
+    // Instead we open a real Chrome Custom Tab, capture the redirect deep link,
+    // and exchange the auth code for a token ourselves via PKCE.
+    if (isCapacitorNative()) {
+      if (opts.interactive) setDriveEnabled(true);
+      return connectMobile(opts);
+    }
+
+    // ── Web browser: existing GIS implicit token flow ─────────────────────────
     if (opts.interactive) {
       setDriveEnabled(true);
       abortActiveConnect("restarted");
@@ -642,6 +834,8 @@
     isConnected,
     getClientId,
     setClientId,
+    getMobileClientId,
+    setMobileClientId,
     getLastSync,
     getLastFileName,
     connect,
