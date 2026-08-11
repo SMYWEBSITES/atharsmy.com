@@ -280,10 +280,11 @@
   }
 
   // Mobile uses a separate Desktop-type OAuth client (no client secret, allows PKCE).
-  // Falls back to the web client ID so the flow attempts and surfaces a clear error
-  // if the user hasn't set up a Desktop client yet.
+  // Returns empty string (falsy) when no mobile client is configured so the guard
+  // in connectMobile() fires a clear error — do NOT fall back to the web client ID
+  // (web clients reject custom-scheme redirect URIs with redirect_uri_mismatch).
   function getMobileClientId() {
-    return (loadCfg().mobile_client_id || loadCfg().client_id || DEFAULT_CLIENT_ID).trim();
+    return (loadCfg().mobile_client_id || "").trim();
   }
 
   function setMobileClientId(id) {
