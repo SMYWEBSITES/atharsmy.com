@@ -25,7 +25,12 @@
 (function (global) {
   "use strict";
 
+  // Web client (GIS popup flow — browser only)
   const DEFAULT_CLIENT_ID = "1013887002929-tp0qaue517d1650g3gq9jtjkgq91r629.apps.googleusercontent.com";
+  // Desktop-type client (PKCE + custom-scheme redirect — Android/iOS only).
+  // Created in Google Cloud Console → Credentials → Zakat Mobile (Desktop app).
+  // Desktop clients accept custom-scheme redirect URIs without explicit registration.
+  const DEFAULT_MOBILE_CLIENT_ID = "1013887002929-n1gl50c1osmf2963g6r4at8aq9d0aeft.apps.googleusercontent.com";
   const GIS_SRC = "https://accounts.google.com/gsi/client";
   const SCOPE = "https://www.googleapis.com/auth/drive.file";
   const CFG_KEY = "zakat_gdrive_cfg_v1";
@@ -280,11 +285,12 @@
   }
 
   // Mobile uses a separate Desktop-type OAuth client (no client secret, allows PKCE).
-  // Returns empty string (falsy) when no mobile client is configured so the guard
-  // in connectMobile() fires a clear error — do NOT fall back to the web client ID
-  // (web clients reject custom-scheme redirect URIs with redirect_uri_mismatch).
+  // Falls back to DEFAULT_MOBILE_CLIENT_ID (the pre-created "Zakat Mobile" Desktop
+  // client) so sign-in works out of the box without any manual setup.
+  // Never falls back to the web DEFAULT_CLIENT_ID — web clients reject custom-scheme
+  // redirect URIs with redirect_uri_mismatch.
   function getMobileClientId() {
-    return (loadCfg().mobile_client_id || "").trim();
+    return (loadCfg().mobile_client_id || DEFAULT_MOBILE_CLIENT_ID).trim();
   }
 
   function setMobileClientId(id) {
