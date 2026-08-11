@@ -2135,8 +2135,8 @@
     panel.appendChild(el("p", { class: "sub", html: "Per-year metal rates for year-by-year valuation. Gold &amp; the USD exchange rate are fetched from the internet; silver/platinum are estimated in-browser (edit to override). Used when an asset is valued as of a past year. <strong>These update only when you click the button below — never on page load.</strong>" }));
 
     const now = ZK.todayUTC().getUTCFullYear();
-    const startIn = el("input", { type: "number", step: "1", value: now - 5, style: "max-width:110px" });
-    const endIn = el("input", { type: "number", step: "1", value: now, style: "max-width:110px" });
+    const startIn = el("input", { type: "number", step: "1", value: now - 5 });
+    const endIn = el("input", { type: "number", step: "1", value: now });
     const histBox = el("div", { class: "rate-sources", id: "hist-warnings" });
 
     const fetchBtn = el("button", { class: "btn secondary", text: "Update historical rates" });
@@ -2203,11 +2203,11 @@
     }
 
     // Manual add-year row
-    const yIn = el("input", { type: "number", step: "1", value: now, style: "max-width:110px" });
-    const yg = Help.bindPh(el("input", { type: "number", step: "0.01", style: "max-width:110px" }), "ph_rate_gold");
-    const ys = Help.bindPh(el("input", { type: "number", step: "0.01", style: "max-width:100px" }), "ph_rate_silver");
-    const yp = Help.bindPh(el("input", { type: "number", step: "0.01", style: "max-width:110px" }), "ph_rate_platinum");
-    const yd = Help.bindPh(el("input", { type: "number", step: "0.01", style: "max-width:120px" }), "ph_rate_diamond");
+    const yIn = el("input", { type: "number", step: "1", value: now });
+    const yg = Help.bindPh(el("input", { type: "number", step: "0.01" }), "ph_rate_gold");
+    const ys = Help.bindPh(el("input", { type: "number", step: "0.01" }), "ph_rate_silver");
+    const yp = Help.bindPh(el("input", { type: "number", step: "0.01" }), "ph_rate_platinum");
+    const yd = Help.bindPh(el("input", { type: "number", step: "0.01" }), "ph_rate_diamond");
     const addBtn = el("button", { class: "btn secondary", text: "Add / update year", onclick: (e) => {
       e.preventDefault();
       const yr = parseInt(yIn.value, 10);
