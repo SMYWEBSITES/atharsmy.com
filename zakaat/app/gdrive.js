@@ -10,10 +10,9 @@
  *                   (Google blocks OAuth popups inside WebViews since 2021)
  *
  * Mobile setup (one-time, Google Cloud Console):
- *  1. APIs & Services → Credentials → Create → OAuth 2.0 Client → Desktop app
- *  2. Name it "Zakat Mobile" — no redirect URI config needed for Desktop type
- *  3. Copy the new client ID and paste it into the Backup tab's
- *     "Mobile OAuth Client ID" field (or set MOBILE_CLIENT_ID below)
+ *  1. APIs & Services → Credentials → Create → OAuth 2.0 Client → Android
+ *  2. Package name: com.atharsmy.zakat  SHA-1: debug keystore fingerprint
+ *  3. Copy the new client ID into DEFAULT_MOBILE_CLIENT_ID below and rebuild
  *
  * Token persistence (mobile):
  *  Access token + refresh token are stored in localStorage under TOKEN_KEY so
@@ -27,10 +26,12 @@
 
   // Web client (GIS popup flow — browser only)
   const DEFAULT_CLIENT_ID = "1013887002929-tp0qaue517d1650g3gq9jtjkgq91r629.apps.googleusercontent.com";
-  // Desktop-type client (PKCE + custom-scheme redirect — Android/iOS only).
-  // Created in Google Cloud Console → Credentials → Zakat Mobile (Desktop app).
-  // Desktop clients accept custom-scheme redirect URIs without explicit registration.
-  const DEFAULT_MOBILE_CLIENT_ID = "1013887002929-n1gl50c1osmf2963g6r4at8aq9d0aeft.apps.googleusercontent.com";
+  // Android client — validates via package name + SHA-1, no redirect URI registration needed.
+  const DEFAULT_ANDROID_CLIENT_ID = "1013887002929-qd4qgoh2gtg918n677mdsu93ec3cu8l1.apps.googleusercontent.com";
+  // iOS client — validates via bundle ID (com.atharsmy.zakat), no redirect URI registration needed.
+  const DEFAULT_IOS_CLIENT_ID     = "1013887002929-kulc4m2njt1j3mh1vc4go28q8ue28hau.apps.googleusercontent.com";
+  // Fallback alias kept for any stored overrides in localStorage.
+  const DEFAULT_MOBILE_CLIENT_ID  = DEFAULT_ANDROID_CLIENT_ID;
   const GIS_SRC = "https://accounts.google.com/gsi/client";
   const SCOPE = "https://www.googleapis.com/auth/drive.file";
   const CFG_KEY = "zakat_gdrive_cfg_v1";
@@ -136,8 +137,7 @@
       var clientId = getMobileClientId();
       if (!clientId) {
         reject(new Error(
-          "Mobile OAuth client ID not set. " +
-          "Create a Desktop app OAuth client in Google Cloud Console and paste the ID into the Backup tab."
+          "Mobile OAuth client ID not configured. Contact the app administrator."
         ));
         return;
       }
@@ -164,6 +164,7 @@
 
         var settled = false;
         var listenerHandle = null;
+        var browserFinishedHandle = null;
 
         function finish(fn, value) {
           if (settled) return;
@@ -172,89 +173,124 @@
             try { listenerHandle.remove(); } catch (e) { /* ignore */ }
             listenerHandle = null;
           }
+          if (browserFinishedHandle) {
+            try { browserFinishedHandle.remove(); } catch (e) { /* ignore */ }
+            browserFinishedHandle = null;
+          }
           fn(value);
         }
 
-        // Listen for the custom-scheme deep link coming back from the browser
-        plugins.App.addListener("appUrlOpen", function (data) {
-          if (!data || !data.url) return;
-          var url;
-          try { url = new URL(data.url); } catch (e) { return; }
-          // Only handle our redirect scheme
-          if (url.protocol !== "com.atharsmy.zakat:" || url.hostname !== "oauth2callback") return;
+        // Listen for the custom-scheme deep link coming back from the browser.
+        // Capacitor 6+ makes addListener() synchronous — it returns a
+        // PluginListenerHandle directly (no .then()).
+        try {
+          listenerHandle = plugins.App.addListener("appUrlOpen", function (data) {
+            if (!data || !data.url) return;
+            var url;
+            try { url = new URL(data.url); } catch (e) { return; }
+            // Only handle our redirect scheme
+            if (url.protocol !== "com.atharsmy.zakat:" || url.hostname !== "oauth2callback") return;
 
-          // Close the Custom Tab
-          try { plugins.Browser.close(); } catch (e) { /* ignore */ }
-
-          var code          = url.searchParams.get("code");
-          var returnedState = url.searchParams.get("state");
-          var error         = url.searchParams.get("error");
-
-          if (error) {
-            finish(reject, new Error("Google sign-in error: " + error));
-            return;
-          }
-          if (returnedState !== state) {
-            finish(reject, new Error("OAuth state mismatch — possible CSRF. Please try again."));
-            return;
-          }
-          if (!code) {
-            finish(reject, new Error("No authorization code returned by Google."));
-            return;
-          }
-
-          // Exchange the code for an access token (PKCE — no client secret needed)
-          fetch(OAUTH_TOKEN_ENDPOINT, {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-              grant_type:    "authorization_code",
-              code:          code,
-              redirect_uri:  PKCE_REDIRECT_URI,
-              client_id:     clientId,
-              code_verifier: verifier,
-            }).toString(),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (token) {
-              if (token.access_token) {
-                accessToken  = token.access_token;
-                tokenExpiry  = Date.now() + (Number(token.expires_in) || 3600) * 1000;
-                // Persist refresh token if Google returned one (access_type=offline).
-                // Google only returns it on first authorization or when prompt=consent
-                // is set; preserve any previously stored refresh token otherwise.
-                if (token.refresh_token) refreshToken = token.refresh_token;
-                persistToken({
-                  access_token:  accessToken,
-                  expiry:        tokenExpiry,
-                  refresh_token: refreshToken || null,
-                });
-                if (opts && opts.interactive) setDriveEnabled(true);
-                finish(resolve, { access_token: accessToken });
-                notifyConnectChange();
-              } else {
-                finish(reject, new Error(token.error_description || token.error || "Token exchange failed"));
-              }
-            })
-            .catch(function (e) {
-              finish(reject, new Error("Token exchange failed: " + (e.message || e)));
-            });
-        }).then(function (handle) {
-          listenerHandle = handle;
-
-          // Open the auth URL in a Chrome Custom Tab
-          plugins.Browser.open({ url: authUrl }).catch(function (e) {
-            finish(reject, new Error("Failed to open browser: " + (e.message || e)));
-          });
-
-          // 5-minute timeout
-          setTimeout(function () {
-            finish(reject, new Error("Google sign-in timed out. Please try again."));
+            // Close the Custom Tab
             try { plugins.Browser.close(); } catch (e) { /* ignore */ }
-          }, 300000);
-        }).catch(function (e) {
+
+            var code          = url.searchParams.get("code");
+            var returnedState = url.searchParams.get("state");
+            var error         = url.searchParams.get("error");
+
+            if (error) {
+              if (error === "access_denied") {
+                finish(reject, new Error(
+                  "Google blocked sign-in (access_denied). " +
+                  "If the app is in Testing mode, go to Google Cloud Console → " +
+                  "APIs & Services → OAuth consent screen → Test users → add your Gmail, " +
+                  "then tap Connect again."
+                ));
+              } else {
+                finish(reject, new Error("Google sign-in error: " + error));
+              }
+              return;
+            }
+            if (returnedState !== state) {
+              finish(reject, new Error("OAuth state mismatch — possible CSRF. Please try again."));
+              return;
+            }
+            if (!code) {
+              finish(reject, new Error("No authorization code returned by Google."));
+              return;
+            }
+
+            // Exchange the code for an access token (PKCE — no client secret needed)
+            fetch(OAUTH_TOKEN_ENDPOINT, {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({
+                grant_type:    "authorization_code",
+                code:          code,
+                redirect_uri:  PKCE_REDIRECT_URI,
+                client_id:     clientId,
+                code_verifier: verifier,
+              }).toString(),
+            })
+              .then(function (r) { return r.json(); })
+              .then(function (token) {
+                if (token.access_token) {
+                  accessToken  = token.access_token;
+                  tokenExpiry  = Date.now() + (Number(token.expires_in) || 3600) * 1000;
+                  // Persist refresh token if Google returned one (access_type=offline).
+                  // Google only returns it on first authorization or when prompt=consent
+                  // is set; preserve any previously stored refresh token otherwise.
+                  if (token.refresh_token) refreshToken = token.refresh_token;
+                  persistToken({
+                    access_token:  accessToken,
+                    expiry:        tokenExpiry,
+                    refresh_token: refreshToken || null,
+                  });
+                  if (opts && opts.interactive) setDriveEnabled(true);
+                  finish(resolve, { access_token: accessToken });
+                  notifyConnectChange();
+                } else {
+                  finish(reject, new Error(token.error_description || token.error || "Token exchange failed"));
+                }
+              })
+              .catch(function (e) {
+                finish(reject, new Error("Token exchange failed: " + (e.message || e)));
+              });
+          });
+        } catch (e) {
           finish(reject, new Error("Failed to register deep link listener: " + (e.message || e)));
+          return;
+        }
+
+        // Detect when the user closes the Custom Tab without completing sign-in
+        // (e.g. after Google shows an "Access blocked" error page). Without this,
+        // the app would silently wait for the 5-minute timeout.
+        try {
+          browserFinishedHandle = plugins.Browser.addListener("browserFinished", function () {
+            // Give appUrlOpen a short head-start in case both events fire together
+            // (the redirect fires appUrlOpen, then the tab closes and fires this).
+            setTimeout(function () {
+              if (!settled) {
+                finish(reject, new Error(
+                  "Google sign-in was cancelled or blocked. " +
+                  "If you saw an \"Access blocked\" error, add your Gmail to " +
+                  "Google Cloud Console → OAuth consent screen → Test users, then tap Connect again."
+                ));
+              }
+            }, 800);
+          });
+        } catch (e) { /* ignore — plugin may not support this event */ }
+
+        // Open the auth URL in a Chrome Custom Tab
+        plugins.Browser.open({ url: authUrl }).catch(function (e) {
+          finish(reject, new Error("Failed to open browser: " + (e.message || e)));
         });
+
+        // 5-minute timeout (fallback if browserFinished never fires)
+        setTimeout(function () {
+          finish(reject, new Error("Google sign-in timed out. Please try again."));
+          try { plugins.Browser.close(); } catch (e) { /* ignore */ }
+        }, 300000);
       }).catch(function (e) {
         reject(new Error("PKCE setup failed: " + (e.message || e)));
       });
@@ -287,10 +323,13 @@
   // Mobile uses a separate Desktop-type OAuth client (no client secret, allows PKCE).
   // Falls back to DEFAULT_MOBILE_CLIENT_ID (the pre-created "Zakat Mobile" Desktop
   // client) so sign-in works out of the box without any manual setup.
-  // Never falls back to the web DEFAULT_CLIENT_ID — web clients reject custom-scheme
-  // redirect URIs with redirect_uri_mismatch.
+  // Returns the correct platform client ID: iOS client on iOS, Android client on Android.
+  // A stored override in localStorage (mobile_client_id) takes precedence if set.
   function getMobileClientId() {
-    return (loadCfg().mobile_client_id || DEFAULT_MOBILE_CLIENT_ID).trim();
+    var stored = (loadCfg().mobile_client_id || "").trim();
+    if (stored) return stored;
+    var platform = (window.Capacitor && window.Capacitor.getPlatform) ? window.Capacitor.getPlatform() : "web";
+    return platform === "ios" ? DEFAULT_IOS_CLIENT_ID : DEFAULT_ANDROID_CLIENT_ID;
   }
 
   function setMobileClientId(id) {

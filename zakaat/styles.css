@@ -355,8 +355,50 @@ tr:last-child td { border-bottom: none; }
   word-break: break-all;
 }
 
-.drive-toolbar { display: grid; gap: 12px; }
+.drive-toolbar { display: grid; gap: 10px; }
 .drive-toolbar .btn-grid .btn { width: 100%; }
+
+/* Backup page — mobile-first action buttons */
+.backup-btn-stack { display: flex; flex-direction: column; gap: 10px; }
+.backup-action-btn {
+  justify-content: flex-start;
+  text-align: left;
+  padding: 14px 18px;
+  min-height: 52px;
+  gap: 14px;
+}
+.backup-action-btn .backup-btn-icon { font-size: 20px; flex-shrink: 0; line-height: 1; }
+.backup-action-btn .backup-btn-body { display: flex; flex-direction: column; gap: 2px; text-align: left; min-width: 0; }
+.backup-action-btn .backup-btn-title { font-weight: 600; font-size: 14px; line-height: 1.2; }
+
+/* Drive section (inline inside Backup panel) */
+.drive-section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.drive-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--slate-400);
+}
+.drive-status-line { display: flex; align-items: center; gap: 5px; }
+.drive-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.drive-status-dot.ok   { background: #10b981; }
+.drive-status-dot.warn { background: #f59e0b; }
+.drive-status-label { font-size: 11px; color: var(--slate-500); }
+
+/* Auto-save + Disconnect on one compact row */
+.drive-auto-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 10px; padding: 0 2px;
+}
+.drive-auto-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--slate-600); cursor: pointer;
+}
+.drive-auto-label input { margin: 0; flex-shrink: 0; }
+
+/* Danger row — no card, just a centred ghost link */
+.backup-danger-row { text-align: center; padding: 6px 0 18px; }
 
 .link { color: var(--emerald-700); cursor: pointer; font-weight: 600; background: none; border: none; padding: 0; font-size: inherit; }
 .link:hover { text-decoration: underline; }
@@ -774,8 +816,17 @@ td.num.neg { color: var(--red-600); }
     width: 100%;
   }
 
+  /* On mobile all tabs wrap into two rows of three so none are hidden */
+  .tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
   .tab-btn {
-    padding: 7px 12px;
+    /* 3 per row: (100% container - 2×6px gap) / 3 */
+    flex: 0 0 calc((100% - 12px) / 3);
+    text-align: center;
+    white-space: normal;
+    padding: 7px 6px;
     font-size: 12px;
   }
 
@@ -965,6 +1016,13 @@ td.num.neg { color: var(--red-600); }
   .checklist-row { border-bottom-color: #2a3a2a; }
   .checklist-label { color: #cbd5e1; }
   .checklist-hint { color: #64748b; }
+}
+
+@media (prefers-color-scheme: dark) {
+  .drive-status-bar.ok   { background: #0d2a1c; border-color: #166534; }
+  .drive-status-bar.warn { background: #2a1f00; border-color: #78350f; }
+  .drive-status-text strong { color: #cbd5e1; }
+  .drive-status-text span   { color: #94a3b8; }
 }
 
 /* --- Hawl status badge on asset rows --- */

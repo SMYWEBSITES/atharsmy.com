@@ -12,17 +12,24 @@
   <link rel="apple-touch-icon" href="assets/icon-192.png" />
   <link rel="manifest" href="manifest.json" />
   <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin-allow-popups" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' capacitor://zakaat.app https://zakaat.app; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' capacitor://zakaat.app https://zakaat.app https://accounts.google.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' capacitor://zakaat.app https://zakaat.app https://fonts.googleapis.com https://accounts.google.com/gsi/style; img-src 'self' data: blob: capacitor://zakaat.app https://zakaat.app https://www.google-analytics.com https://www.googletagmanager.com; font-src 'self' data: capacitor://zakaat.app https://zakaat.app https://fonts.gstatic.com; connect-src 'self' capacitor://zakaat.app https://zakaat.app https://api.gold-api.com https://api.frankfurter.dev https://open.er-api.com https://freegoldapi.com https://ipapi.co https://ipwho.is https://www.googleapis.com https://accounts.google.com https://www.googletagmanager.com https://www.google-analytics.com https://region1.google-analytics.com https://region2.google-analytics.com https://analytics.google.com; frame-src https://accounts.google.com; worker-src 'self' capacitor://zakaat.app https://zakaat.app" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' capacitor://zakaat.app https://zakaat.app; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' capacitor://zakaat.app https://zakaat.app https://accounts.google.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' capacitor://zakaat.app https://zakaat.app https://fonts.googleapis.com https://accounts.google.com/gsi/style; img-src 'self' data: blob: capacitor://zakaat.app https://zakaat.app https://www.google-analytics.com https://www.googletagmanager.com; font-src 'self' data: capacitor://zakaat.app https://zakaat.app https://fonts.gstatic.com; connect-src 'self' capacitor://zakaat.app https://zakaat.app https://api.gold-api.com https://api.frankfurter.dev https://open.er-api.com https://freegoldapi.com https://ipapi.co https://ipwho.is https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com https://www.googletagmanager.com https://www.google-analytics.com https://region1.google-analytics.com https://region2.google-analytics.com https://analytics.google.com; frame-src https://accounts.google.com; worker-src 'self' capacitor://zakaat.app https://zakaat.app" />
   <title>Zakat Calculator | S M Y ATHAR</title>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20260820" />
-  <!-- Google tag (gtag.js) -->
-  <script src="js/gtag-bootstrap.js"></script>
-  <script src="https://www.googletagmanager.com/gtag/js?id=G-3DFSY795RJ"></script>
+  <link rel="stylesheet" href="styles.css?v=20260813i" />
+  <!-- Google tag (gtag.js) — web only, skipped inside Capacitor native shell -->
+  <script>
+    if (!window.Capacitor) {
+      (function() {
+        var s1 = document.createElement("script"); s1.src = "js/gtag-bootstrap.js";
+        var s2 = document.createElement("script"); s2.src = "https://www.googletagmanager.com/gtag/js?id=G-3DFSY795RJ"; s2.async = true;
+        document.head.appendChild(s1); document.head.appendChild(s2);
+      })();
+    }
+  </script>
 </head>
 <body>
   <header class="app-header">
@@ -48,7 +55,7 @@
       <button class="tab-btn" data-tab="analytics">Analytics</button>
       <button class="tab-btn" data-tab="yearly">Yearly</button>
       <button class="tab-btn" data-tab="rates">Rates</button>
-      <button class="tab-btn" data-tab="backup">Backup</button>
+      <button class="tab-btn" data-tab="backup">Backup &amp; Restore</button>
       <button class="tab-btn" data-tab="guide">About</button>
     </nav>
   </header>
@@ -66,19 +73,19 @@
   <div id="toast-root"></div>
 
   <!-- Preload the two heaviest app scripts so they start downloading in parallel with CSS -->
-  <link rel="preload" as="script" href="app/ui.js?v=20260823" />
-  <link rel="preload" as="script" href="app/help.js?v=20260816" />
+  <link rel="preload" as="script" href="app/ui.js?v=20260813j" />
+  <link rel="preload" as="script" href="app/help.js?v=20260816c" />
   <!-- defer: scripts execute in order after HTML is parsed (non-blocking) -->
   <!-- xlsx.full.min.js (932 KB) is lazy-loaded by excel.js when the Backup tab is first used -->
-  <script src="js/analytics.js" defer></script>
+  <script>if (!window.Capacitor) { var _as = document.createElement("script"); _as.src = "js/analytics.js"; _as.defer = true; document.head.appendChild(_as); }</script>
   <script src="app/zakat.js?v=20260810" defer></script>
   <script src="app/storage.js?v=20260810" defer></script>
   <script src="app/excel.js?v=20260810" defer></script>
   <script src="app/rates.js?v=20260810" defer></script>
   <script src="app/rates_history.js?v=20260810" defer></script>
-  <script src="app/gdrive.js?v=20260810" defer></script>
-  <script src="app/help.js?v=20260816" defer></script>
-  <script src="app/ui.js?v=20260823" defer></script>
+  <script src="app/gdrive.js?v=20260813i" defer></script>
+  <script src="app/help.js?v=20260816c" defer></script>
+  <script src="app/ui.js?v=20260813j" defer></script>
   <script>
     // Skip service worker inside Capacitor — it handles its own file serving
     if ("serviceWorker" in navigator && !window.Capacitor) {

@@ -30,15 +30,9 @@
         else if (k.startsWith("on") && typeof attrs[k] === "function") node.addEventListener(k.slice(2), attrs[k]);
         else if (attrs[k] !== null && attrs[k] !== undefined) node.setAttribute(k, attrs[k]);
       }
-      // Right-align/tag every plain text leaf node for the current site
-      // language (Urdu/Arabic), unless the caller set dir/lang explicitly
-      // (e.g. a node that always shows a specific-language word regardless
-      // of the active UI language). Only applies to leaf text nodes — flex/
-      // grid containers are built without a `text` attr, so their layout
-      // order is never touched.
-      if (attrs.text !== undefined && attrs.dir === undefined && attrs.lang === undefined && Help) {
-        Help.applyDirection(node, Help.effectiveLang());
-      }
+      // Direction is applied only by bind() for explicitly translated nodes.
+      // Auto-applying RTL here would right-align English-language elements
+      // (headings, labels) whenever Urdu/Arabic is selected.
     }
     if (children) (Array.isArray(children) ? children : [children]).forEach((c) => {
       if (c == null) return;
@@ -144,24 +138,36 @@
     panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
+  // Get/set the button's primary label, falling back to full textContent for
+  // simple (non-backup-action-btn) buttons.
+  function _btnGetLabel(btn) {
+    const t = btn.querySelector(".backup-btn-title");
+    return t ? t.textContent : btn.textContent;
+  }
+  function _btnSetLabel(btn, label) {
+    const t = btn.querySelector(".backup-btn-title");
+    if (t) t.textContent = label;
+    else btn.textContent = label;
+  }
+
   function resetDriveConnectButtons() {
     document.querySelectorAll("[data-drive-connect]").forEach((btn) => {
       btn.disabled = false;
       if (Drive && Drive.isConnected()) {
         if (btn.dataset.connectLabel === "Connect Google Drive") {
-          btn.textContent = "Connected \u2014 tap to reconnect";
+          _btnSetLabel(btn, "Reconnect Google Drive");
         }
         return;
       }
-      if (btn.dataset.connectLabel) btn.textContent = btn.dataset.connectLabel;
+      if (btn.dataset.connectLabel) _btnSetLabel(btn, btn.dataset.connectLabel);
     });
   }
 
   function markDriveConnectButton(btn, busyLabel) {
-    if (!btn.dataset.connectLabel) btn.dataset.connectLabel = btn.textContent;
+    if (!btn.dataset.connectLabel) btn.dataset.connectLabel = _btnGetLabel(btn);
     btn.dataset.driveConnect = "1";
     btn.disabled = true;
-    btn.textContent = busyLabel;
+    _btnSetLabel(btn, busyLabel);
   }
 
   function connectDriveInteractive(opts) {
@@ -707,6 +713,7 @@
             total_wealth:     Math.round(totalWealth),
             zakatable_amount: Math.round(totalZakatable),
             zakat_due:        Math.round(household.total_zakat_inr),
+            currency:         Store.getCurrency() || "INR",
           });
         }
         trackEvent("dashboard_view", {
@@ -2503,205 +2510,424 @@
 
   // --- Backup tab (export, sync, replace) ---
   function renderBackup() {
-    // Pre-warm SheetJS in the background as soon as the tab opens, so it's
-    // ready before the user clicks Download (saves ~500ms on the first click).
+    // Pre-warm SheetJS so it's ready before the user clicks Download.
     if (Excel && Excel.loadXlsx) Excel.loadXlsx();
     const panel = document.getElementById("tab-backup");
     clear(panel);
 
-    const exportPanel = el("div", { class: "panel" });
-    exportPanel.appendChild(el("h2", { text: "Export" }));
-    exportPanel.appendChild(el("p", { class: "sub", text: "Download a full Excel backup or a readable Zakat report." }));
-    exportPanel.appendChild(el("div", { class: "btn-grid" }, [
-      el("button", { class: "btn", text: "Download backup", onclick: () => { Excel.exportBackup().then(() => { trackEvent("backup_export", { type: "full" }); toast("Backup downloaded", "ok"); }).catch((e) => toast("Export failed: " + e.message, "err")); } }),
-      el("button", { class: "btn secondary", text: "Download report", onclick: () => { Excel.exportReport().then(() => { trackEvent("backup_export", { type: "report" }); toast("Report downloaded", "ok"); }).catch((e) => toast("Export failed: " + e.message, "err")); } }),
-    ]));
-    panel.appendChild(exportPanel);
-    panel.appendChild(renderDrivePanel());
+    // Full-width action button with icon + title
+    function aBtn(cls, icon, title, onclick) {
+      return el("button", { class: "btn block backup-action-btn " + cls, onclick: onclick }, [
+        el("span", { class: "backup-btn-icon", text: icon }),
+        el("span", { class: "backup-btn-body" }, [
+          el("span", { class: "backup-btn-title", text: title }),
+        ]),
+      ]);
+    }
 
-    const replacePanel = el("div", { class: "panel" });
-    replacePanel.appendChild(el("h2", { text: "Replace data" }));
-    replacePanel.appendChild(el("p", { class: "sub", text: "Overwrite everything in this browser with a different backup." }));
-    replacePanel.appendChild(el("div", { class: "btn-grid" }, [
-      el("button", { class: "btn", text: "Replace from Excel", onclick: replaceFromExcelFile }),
-      el("button", { class: "btn secondary", text: "Replace from Drive", onclick: replaceFromDriveBackup }),
+    // ── 1. Backup panel (local + Drive in one card) ──────────────────────────────────────────
+    const savePanel = el("div", { class: "panel" });
+    savePanel.appendChild(el("h2", { text: Help.t("bkp_title") }));
+    savePanel.appendChild(el("div", { class: "backup-btn-stack" }, [
+      aBtn("", "\ud83d\udce5", Help.t("bkp_download_device"), () => {
+        Excel.exportBackup().then(() => { trackEvent("backup_export", { type: "full" }); toast("Backup downloaded", "ok"); }).catch((e) => toast("Export failed: " + e.message, "err"));
+      }),
+      aBtn("secondary", "\ud83d\udcc4", Help.t("bkp_download_report"), () => {
+        Excel.exportReport().then(() => { trackEvent("backup_export", { type: "report" }); toast("Report downloaded", "ok"); }).catch((e) => toast("Export failed: " + e.message, "err"));
+      }),
     ]));
-    panel.appendChild(replacePanel);
+    savePanel.appendChild(renderDriveSection());
+    panel.appendChild(savePanel);
 
-    const danger = el("div", { class: "panel" });
-    danger.appendChild(el("h2", { text: "Clear all data" }));
-    danger.appendChild(el("p", { class: "sub", text: "Erase everything stored in this browser. Export a backup first if you want to keep it." }));
-    danger.appendChild(el("button", { class: "btn danger block", text: "Clear all data", onclick: () => confirmDialog("Clear all data", "This permanently deletes all members, assets, payments and rates from this browser. Continue?", () => {
-      Store.clearAll();
-      refreshAll();
-      toast("All data cleared");
-      showWelcomeModal(() => refreshAll());
-    }, "Clear everything", true) }));
-    panel.appendChild(danger);
+    // ── 2. Restore panel ──────────────────────────────────────────────────────────
+    const restorePanel = el("div", { class: "panel" });
+    restorePanel.appendChild(el("h2", { text: Help.t("bkp_restore_title") }));
+    restorePanel.appendChild(el("div", { class: "backup-btn-stack" }, [
+      aBtn("", "\ud83d\udcc2", Help.t("bkp_from_excel"), replaceFromExcelFile),
+      aBtn("secondary", "\u2601\ufe0f", Help.t("bkp_from_drive"), replaceFromDriveBackup),
+    ]));
+    panel.appendChild(restorePanel);
+
+    // ── 3. Clear — subtle ghost link, no full panel ──────────────────────────────────────────
+    const dangerRow = el("div", { class: "backup-danger-row" });
+    dangerRow.appendChild(el("button", {
+      class: "btn-ghost sm danger-text",
+      text: Help.t("bkp_clear"),
+      onclick: () => confirmDialog("Clear all data", "Permanently deletes all members, assets, payments and rates. Continue?", () => {
+        Store.clearAll(); refreshAll(); toast("All data cleared"); showWelcomeModal(() => refreshAll());
+      }, "Clear everything", true),
+    }));
+    panel.appendChild(dangerRow);
   }
 
-  // --- Google Drive sync (MY_FAMILY/ZAKAAT/) ---
-  function renderDrivePanel() {
-    const panel = el("div", { class: "panel" });
-    panel.appendChild(el("h2", { text: "Google Drive sync" }));
-    panel.appendChild(el("p", {
-      class: "sub",
-      html: "Sign in once to auto-save your Excel backup to <code>" +
-        (Drive ? Drive.folderPathLabel() + Drive.backupFileName() : "MY_FAMILY/ZAKAAT/zakaat_&lt;mon&gt;_&lt;year&gt;.xlsx") +
-        "</code>. Your data stays in your Google account — we never store it on a server. Only files this app creates are accessed.",
-    }));
+  // --- Google Drive section (embedded inside the Backup panel) ---
+  function renderDriveSection() {
+    const section = el("div", { class: "subpanel" });
 
     if (!Drive) {
-      panel.appendChild(el("div", { class: "notice err", text: "Drive module not loaded." }));
-      return panel;
+      section.appendChild(el("div", { class: "notice err", text: "Drive module not loaded." }));
+      return section;
     }
 
     const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
-    // ── Setup instructions (platform-aware) ───────────────────────────────────
-    const setupHtml = isNative
-      ? "Mobile sign-in uses a <strong>Desktop app</strong> OAuth client (not the web client).<br>" +
-        "1. <a href=\"https://console.cloud.google.com\" target=\"_blank\" rel=\"noopener\">console.cloud.google.com</a> " +
-          "→ <em>APIs &amp; Services → Credentials → Create → OAuth client → <strong>Desktop app</strong></em><br>" +
-        "2. Name it <em>Zakat Mobile</em> → Create → copy the <strong>Client ID</strong><br>" +
-        "3. Paste it into the <strong>Mobile Client ID</strong> field below → tap <em>Connect Google Drive</em><br>" +
-        "4. <em>OAuth consent screen → Test users</em> → add your Gmail address"
-      : "1. <em>Credentials</em> → Web client → <em>Authorized JavaScript origins</em>: <code>" + Drive.getPageOrigin() + "</code><br>" +
-        "2. <em>OAuth consent screen</em> → <em>Test users</em> → add each family Gmail (e.g. <code>smy.altamash@gmail.com</code>).<br>" +
-        "3. Privacy policy: <a href=\"https://atharsmy.com/privacy.html\" target=\"_blank\" rel=\"noopener noreferrer\">atharsmy.com/privacy.html</a>";
+    // Compact header row: label on left, status dot + text on right
+    const statusDot = el("span", { class: "drive-status-dot warn" });
+    const statusLabel = el("span", { class: "drive-status-label" });
 
-    panel.appendChild(el("details", { class: "setup-details" }, [
-      el("summary", { text: "One-time Google Cloud setup" }),
-      el("div", { class: "setup-body", html: setupHtml }),
-    ]));
-
-    // ── Mobile Client ID field (only shown inside the native app) ────────────
-    if (isNative) {
-      const mobileIdWrap = el("div", { class: "subpanel" });
-      const mobileIdLabel = el("label", { class: "field-label", text: "Mobile OAuth Client ID" });
-      const mobileIdInput = el("input", {
-        type: "text",
-        class: "text-input",
-        placeholder: "Paste Desktop app Client ID from Google Cloud Console",
-        value: Drive.getMobileClientId() !== Drive.getClientId() ? Drive.getMobileClientId() : "",
-      });
-      const mobileIdSave = el("button", { class: "btn secondary", text: "Save" });
-      const mobileIdHelp = el("div", {
-        class: "help",
-        text: "Required for Google Drive on Android and iOS. Create a Desktop app client in Google Cloud Console (see setup above).",
-      });
-      mobileIdSave.addEventListener("click", () => {
-        const val = mobileIdInput.value.trim();
-        if (!val) { toast("Paste a Client ID first", "err"); return; }
-        Drive.setMobileClientId(val);
-        toast("Mobile Client ID saved", "ok");
-      });
-      const mobileIdRow = el("div", { class: "field-row" }, [mobileIdInput, mobileIdSave]);
-      mobileIdWrap.appendChild(mobileIdLabel);
-      mobileIdWrap.appendChild(mobileIdRow);
-      mobileIdWrap.appendChild(mobileIdHelp);
-      panel.appendChild(mobileIdWrap);
-    }
-
-    const status = el("div", { class: "notice compact", text: "" });
     function setStatus() {
-      const last = Drive.getLastSync();
       const connected = Drive.isConnected();
       const lastFile = Drive.getLastFileName();
-      status.className = "notice " + (connected ? "ok" : "warn");
-      status.textContent =
-        (connected ? "Connected to Google Drive. " : "Click Connect to sign in with Google. ") +
-        (lastFile ? "Last file: " + lastFile + ". " : "") +
-        (last ? "Last sync: " + new Date(last).toLocaleString() + "." : "No sync yet.");
+      const last = Drive.getLastSync();
+      statusDot.className = "drive-status-dot " + (connected ? "ok" : "warn");
+      statusLabel.textContent = connected
+        ? (lastFile ? lastFile + (last ? " · " + new Date(last).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "") : "Connected")
+        : Help.t("bkp_not_connected");
     }
 
-    panel.appendChild(status);
+    section.appendChild(el("div", { class: "drive-section-header" }, [
+      el("span", { class: "drive-section-title", text: Help.t("bkp_drive_label") }),
+      el("div", { class: "drive-status-line" }, [statusDot, statusLabel]),
+    ]));
 
+    // Buttons
+    // driveHelpHost starts empty — revealDrivePopupHelp() appends the panel
+    // lazily only when a popup-blocked error actually occurs.
     const driveHelpHost = el("div", { class: "drive-help-host" });
-    driveHelpHost.appendChild(drivePopupHelpPanel(false));
 
-    const connectBtn = el("button", { class: "btn block", text: "Connect Google Drive" });
-    const backupBtn = el("button", { class: "btn secondary", text: "Upload now" });
-    const disconnectBtn = el("button", { class: "btn-ghost danger-text", text: "Disconnect" });
+    const connectBtn = el("button", { class: "btn block backup-action-btn" }, [
+      el("span", { class: "backup-btn-icon", text: "\ud83d\udd17" }),
+      el("span", { class: "backup-btn-body" }, [el("span", { class: "backup-btn-title", text: Help.t("bkp_connect") })]),
+    ]);
+    const uploadBtn = el("button", { class: "btn secondary block backup-action-btn" }, [
+      el("span", { class: "backup-btn-icon", text: "\u2601\ufe0f" }),
+      el("span", { class: "backup-btn-body" }, [el("span", { class: "backup-btn-title", text: Help.t("bkp_upload_now") })]),
+    ]);
+    const disconnectBtn = el("button", { class: "btn-ghost sm danger-text", text: Help.t("bkp_disconnect") });
+
+    // Auto-save toggle + disconnect on one compact row
+    const autoChk = el("input", { type: "checkbox" });
+    autoChk.checked = Drive.getAutoSync();
+    autoChk.addEventListener("change", () => {
+      Drive.setAutoSync(autoChk.checked);
+      toast(autoChk.checked ? "Auto-save enabled" : "Auto-save disabled", "ok");
+    });
+    const autoRow = el("div", { class: "drive-auto-row" }, [
+      el("label", { class: "drive-auto-label" }, [autoChk, el("span", { text: " " + Help.t("bkp_auto_save") })]),
+      disconnectBtn,
+    ]);
 
     function refreshButtons() {
       const connected = Drive.isConnected();
-      connectBtn.textContent = connected ? "Connected — tap to reconnect" : "Connect Google Drive";
-      disconnectBtn.style.display = connected ? "" : "none";
+      const titleEl = connectBtn.querySelector(".backup-btn-title");
+      if (titleEl) titleEl.textContent = connected ? Help.t("bkp_reconnect") : Help.t("bkp_connect");
+      uploadBtn.style.display = connected ? "" : "none";
+      autoRow.style.display = connected ? "" : "none";
     }
 
     function busy(btn, label, fn) {
-      const prev = btn.textContent;
+      const titleEl = btn.querySelector(".backup-btn-title");
+      const prev = titleEl ? titleEl.textContent : btn.textContent;
       btn.disabled = true;
-      btn.textContent = label;
-      return Promise.resolve()
-        .then(fn)
+      if (titleEl) titleEl.textContent = label;
+      else btn.textContent = label;
+      return Promise.resolve().then(fn)
         .catch((e) => toast(e.message || String(e), "err"))
         .finally(() => {
           btn.disabled = false;
-          btn.textContent = prev;
-          setStatus();
-          refreshButtons();
+          if (titleEl) titleEl.textContent = prev;
+          else btn.textContent = prev;
+          setStatus(); refreshButtons();
         });
     }
 
     connectBtn.addEventListener("click", () =>
       connectDriveInteractive({
-        button: connectBtn,
-        busyLabel: "Connecting\u2026",
-        helpHost: driveHelpHost,
-        onSuccess: () =>
-          Drive.maybeSyncMonthRollover().catch(() => false).then(() => {
-            setStatus();
-            refreshButtons();
-            toast("Connected to Google Drive", "ok");
-          }),
-      }).catch((e) => {
-        if (!Drive.isPopupBlockedError(e)) toast(e.message || String(e), "err");
-      })
+        button: connectBtn, busyLabel: "Connecting\u2026", helpHost: driveHelpHost,
+        onSuccess: () => Drive.maybeSyncMonthRollover().catch(() => false).then(() => {
+          setStatus(); refreshButtons(); toast("Connected to Google Drive", "ok");
+        }),
+      }).catch((e) => { if (!Drive.isPopupBlockedError(e)) toast(e.message || String(e), "err"); })
     );
-    backupBtn.addEventListener("click", () =>
-      busy(backupBtn, "Uploading\u2026", () =>
-        Drive.backup().then((res) => {
-          trackEvent("backup_export", { type: "drive" });
-          toast("Backed up to " + res.path, "ok");
-        })
+    uploadBtn.addEventListener("click", () =>
+      busy(uploadBtn, "Uploading\u2026", () =>
+        Drive.backup().then((res) => { trackEvent("backup_export", { type: "drive" }); toast("Backed up to " + res.path, "ok"); })
       )
     );
     disconnectBtn.addEventListener("click", () => { Drive.disconnect(); toast("Disconnected"); setStatus(); refreshButtons(); });
 
-    const toolbar = el("div", { class: "drive-toolbar" });
-    toolbar.appendChild(connectBtn);
-    toolbar.appendChild(el("div", { class: "btn-grid" }, [backupBtn]));
-    toolbar.appendChild(el("div", { class: "action-bar" }, [disconnectBtn]));
-    panel.appendChild(toolbar);
-    panel.appendChild(driveHelpHost);
+    const btnStack = el("div", { class: "backup-btn-stack" });
+    btnStack.appendChild(connectBtn);
+    btnStack.appendChild(uploadBtn);
+    section.appendChild(btnStack);
+    section.appendChild(autoRow);
+    section.appendChild(driveHelpHost);
 
-    const autoWrap = el("div", { class: "subpanel" });
-    const autoChk = el("input", { type: "checkbox" });
-    autoChk.checked = Drive.getAutoSync();
-    autoChk.addEventListener("change", () => {
-      Drive.setAutoSync(autoChk.checked);
-      toast(autoChk.checked ? "Auto-backup to Drive enabled" : "Auto-backup disabled", "ok");
-    });
-    autoWrap.appendChild(el("label", { class: "checkbox-field" }, [
-      autoChk,
-      el("span", { text: " Auto-save to Drive after each change (enabled by default)" }),
-    ]));
-    autoWrap.appendChild(el("div", {
-      class: "help",
-      text: "Updates " + Drive.folderPathLabel() + Drive.backupFileName() + " throughout the month. " +
-        "When a new month starts, creates " + Drive.backupFileName() + " from the latest previous monthly backup on Drive.",
-    }));
-    panel.appendChild(autoWrap);
+    // Web-only: setup help accordion for local dev
+    if (!isNative) {
+      const setupHtml = "1. <em>Credentials \u2192 Web client \u2192 Authorized JavaScript origins</em>: <code>" + Drive.getPageOrigin() + "</code><br>" +
+        "2. <em>OAuth consent screen \u2192 Test users</em> \u2192 add each Gmail.";
+      section.appendChild(el("details", { class: "setup-details" }, [
+        el("summary", { text: Help.t("bkp_drive_setup") }),
+        el("div", { class: "setup-body", html: setupHtml }),
+      ]));
+    }
 
-    setStatus();
-    refreshButtons();
-    return panel;
+    setStatus(); refreshButtons();
+    return section;
   }
 
-  // --- Guide & FAQ (ported from zakat_guide.html / zakat_faq.html) ---
+  // Legacy wrapper kept for any callers outside renderBackup
+  function renderDrivePanel() {
+    const p = el("div", { class: "panel" });
+    p.appendChild(el("h2", { text: "Google Drive sync" }));
+    p.appendChild(renderDriveSection());
+    return p;
+  }
+
+    // --- Guide & FAQ (ported from zakat_guide.html / zakat_faq.html) ---
   let guideView = "guide"; // "guide" | "faq"
+
+  // Body text per language for each guide section and FAQ answers.
+  // Sections with dynamic values receive them via function arguments.
+  // Falls back to "en" for any unregistered language.
+  const GUIDE_CONTENT = {
+    en: {
+      app_p1: "Household Zakat calculator for families: add <strong>family members</strong>, record <strong>assets</strong> in your currency, set <strong>market rates</strong>, and see <strong>due, paid, and remaining</strong> on the dashboard. On first open, choose an Excel backup from your computer or Google Drive. The <strong>Backup</strong> tab handles export and Drive sync. Everything runs in your browser; data stays on your device.",
+      app_ul: "<li><strong>Not a fatwa</strong> — confirm with your scholar.</li><li><strong>2.5%</strong> on zakatable wealth at/above nisab; madhhab rules for jewelry and debts.</li><li><strong>Zakat baseline:</strong> first Friday of Ramadan (shown in the header).</li>",
+      what_p1: "<strong>Zakat</strong> is the obligatory annual charity on surplus wealth held for one lunar year — the third pillar of Islam. Unlike voluntary <em>sadaqah</em>, it is a fixed right of the poor once wealth reaches <em>nisab</em> (نصاب).",
+      what_p2: "Recipients are named in the Qur’an (9:60): poor, needy, collectors, those whose hearts are reconciled, captives, debtors, in Allah’s cause, and stranded travellers.",
+      when_ul: function(nisabLine, jewelryLine, debtLine, rulesLabel) {
+        return "<li><strong>Hawl:</strong> ~354 lunar days of possession — set <strong>Hawl start</strong> on each asset.</li>" +
+          "<li><strong>Rate:</strong> <strong>2.5%</strong> (one-fortieth) when total zakatable wealth ≥ nisab.</li>" +
+          "<li><strong>Nisab (" + rulesLabel + "):</strong> " + nisabLine + ". Change school on the Market Rates tab.</li>" +
+          "<li><strong>Jewelry:</strong> " + jewelryLine + "</li>" +
+          "<li><strong>Yearly, not monthly:</strong> enter <strong>total cash</strong> on your Zakat date — not 2.5% on each salary or rent cheque.</li>" +
+          "<li><strong>Zakat al-Fitr</strong> is separate and not calculated here.</li>";
+      },
+      calc_sub: "Per-member assets → values at baseline date → nisab check → rates → minus payments.",
+      calc_th: ["Type", "In this app"],
+      calc_rows: function(debtLine) { return [
+        ["Gold / silver / platinum / diamond", "Grams or market value → share of <strong>2.5%</strong> when above nisab"],
+        ["Cash / PF / stocks / business", "<strong>2.5% yearly</strong> on balances (PF projected from statement + contributions)"],
+        ["Property", "Home/rental building exempt; <strong>for sale</strong> → 2.5% on market value; rent → <strong>Cash</strong>"],
+        ["Livestock / agriculture / rikaz", "Sunnah tiers / harvest % / <strong>20% once</strong> for rikaz"],
+        ["Liabilities", debtLine],
+        ["Remaining", "Due − payments"],
+      ]; },
+      calc_rate_note: function(g, s) { return "Session rates until you fetch: gold " + g + "/g, silver " + s + "/g."; },
+      schools_sub: function(label) { return "Current: <strong>" + label + "</strong> (change on the Market Rates tab)."; },
+      schools_th: ["Rule", ""],
+      schools_r_nisab: "Nisab", schools_r_jewelry: "Worn jewelry", schools_r_debts: "Debts",
+      schools_v_silver: "Silver", schools_v_gold: "Gold",
+      schools_v_exempt: "Can exempt", schools_v_allgold: "All gold/silver",
+      schools_v_none: "None", schools_v_cash: "Cash only", schools_v_full: "Full",
+      using_ol: "<li><strong>Dashboard</strong> — rates summary, household totals, members &amp; assets.</li><li><strong>Analytics</strong> — wealth/Zakat over time and per-component breakdown.</li><li><strong>Yearly Review</strong> — record what each asset was worth in past years.</li><li><strong>Market Rates</strong> — school selector, manual/live rates, yearly history.</li><li><strong>Backup &amp; Restore</strong> — Excel export/report, Google Drive auto-save, and replace from file or Drive.</li>",
+      disclaimer_p: "Educational tool only. Confirm amounts and recipients with a <strong>qualified scholar</strong>. Market rates are indicative.",
+      faq_a: function(rules, debtAns, jewelryAns) { return [
+        "<strong>No.</strong> It is a household calculator with scholar-reviewed defaults. Confirm with a qualified scholar before paying.",
+        "The minimum zakatable wealth before Zakat is due. This app uses gold or silver weights × rates per your <strong>" + rules.label + "</strong> setting.",
+        "Usually: below <strong>nisab</strong>; still in <strong>hawl</strong>; property is <strong>personal/rental</strong>; jewelry marked <strong>personal adornment</strong> (where exempt); or values not entered yet.",
+        "<strong>Today’s market value</strong> for cash, shares, trade property, and metals. Zakat is on what wealth is worth at your Zakat date, not original cost.",
+        "<strong>No</strong> on the building — <strong>Property → Personal residence</strong>. It may show on Analytics for records but is excluded from Zakat.",
+        "Two <strong>Property</strong> assets: <strong>Personal residence</strong> for your home, <strong>Rental</strong> or <strong>For sale / trade</strong> for the other. Rent received → <strong>Cash</strong>.",
+        "Use <strong>current market value</strong>, subtype <strong>trade</strong>, hawl from purchase. Bought ₹1L, now ₹7L → enter <strong>₹7L</strong>; Zakat ≈ 2.5% of ₹7L if above nisab — not 2.5% of “profit” only.",
+        "~<strong>354 lunar days</strong> of owning zakatable wealth. Set <strong>Hawl start</strong> when you received or bought the asset. Wealth still in hawl is excluded until the year completes.",
+        "Many families use <strong>Ramadan</strong>. This app’s baseline is the <strong>first Friday of Ramadan</strong> (Umm al-Qura); the header shows today and that baseline.",
+        "<strong>Yearly</strong> — once per lunar year, not monthly. Cash: total you still hold on your Zakat date × 2.5% if above nisab. Rent: building exempt; rent you keep → <strong>Cash</strong>.",
+        jewelryAns,
+        "<strong>Rikaz (ركاز)</strong> is buried treasure or wealth your scholar rules as rikaz — not salary, FD, or shares. This app: <strong>20% once</strong>, not 2.5% yearly. Use category <strong>Rikaz</strong>.",
+        "<strong>Zakat</strong> — fixed right on surplus wealth. <strong>Sadaqah</strong> — voluntary. <strong>Zakat al-Fitr</strong> — end of Ramadan per person; <strong>not</strong> in this calculator.",
+        "Add <strong>Liabilities</strong>. With <strong>" + rules.label + "</strong>: " + debtAns + " Home loans are not auto-linked to property — ask your scholar.",
+        "<strong>What remains in the bank</strong> on your Zakat date. Salary already spent on living costs is not zakatable.",
+        "<strong>PF / EPF:</strong> category <strong>PF</strong> — statement balance, as-of date, monthly contributions, projected balance (default 8.25% p.a.). <strong>Funds / shares:</strong> <strong>Stocks</strong> with current total value.",
+        "The dashboard shows the <strong>current year</strong>. Use <strong>Yearly Review</strong> to record past-year balances so Analytics reflects them, and calculate any owed back-Zakat with your scholar.",
+        "Per member → <strong>+ Payment</strong>: recipient and amount. <strong>Remaining</strong> = due − paid.",
+        "Qur’an 9:60: poor, needy, collectors, hearts reconciled, captives, debtors, in Allah’s cause, stranded travellers. Your scholar can guide eligible recipients.",
+        "Many calculators use gold nisab only. <strong>Hanafi</strong> often compares <strong>all combined wealth</strong> to <strong>silver nisab</strong> (lower bar). This app follows that when Hanafi is selected.",
+        "On first visit, pick a backup from your computer or Google Drive. Later, use the <strong>Backup &amp; Restore</strong> tab to download Excel, auto-save to <strong>MY_FAMILY/ZAKAAT/zakaat_&lt;mon&gt;_&lt;year&gt;.xlsx</strong>, or replace from another file.",
+        "Set <strong>Acquired year</strong> and record balances over time in <strong>Yearly Review</strong>; metals use yearly rates.",
+        "<strong>Yes.</strong> Add multiple <strong>Family members</strong>; Zakat is computed per person and summed on the dashboard.",
+      ]; },
+    },
+
+    ur: {
+      app_p1: "گھرانے کا زکات کیلکولیٹر: <strong>خاندان کے افراد</strong> شامل کریں، اپنی کرنسی میں <strong>اثاثے</strong> ریکارڈ کریں، <strong>مارکیٹ ریٹ</strong> مقرر کریں، اور ڈیش بورڈ پر <strong>واجب، ادا شدہ، اور باقی</strong> رقم دیکھیں۔ پہلی بار کھولنے پر کمپیوٹر یا گوگل ڈرائیو سے بیک اپ منتخب کریں۔ <strong>بیک اپ</strong> ٹیب ایکسپورٹ اور ڈرائیو سنک کا انتظام کرتا ہے۔ سب کچھ آپ کے براؤزر میں چلتا ہے؛ ڈیٹا آپ کے ڈیوائس پر محفوظ رہتا ہے۔",
+      app_ul: "<li><strong>فتویٰ نہیں</strong> — اپنے عالم سے تصدیق کریں۔</li><li>نصاب پر یا اس سے زیادہ زکات کے قابل دولت پر <strong>2.5%</strong> واجب؛ زیورات اور قرض کے مذہبی احکام۔</li><li><strong>زکات بیس لائن:</strong> رمضان کی پہلی جمعہ (ہیڈر میں دکھائی جاتی ہے)۔</li>",
+      what_p1: "<strong>زکات</strong> اسلام کا تیسرا رکن ہے — ایک قمری سال رکھی گئی اضافی دولت پر واجب سالانہ عبادت۔ رضاکارانہ <em>صدقے</em> کے برخلاف، یہ نصاب (نِصاب) تک پہنچنے پر غرباء کا ایک مقررہ حق ہے۔",
+      what_p2: "قرآن (9:60) میں ذکر شدہ مستحقین: فقیر، مسکین، عاملین، مؤلفة القلوب، غلام، مقروض، فی سبیل اللہ، اور مسافر۔",
+      when_ul: function(nisabLine, jewelryLine, debtLine, rulesLabel) {
+        return "<li><strong>حول:</strong> ~354 قمری دن کی ملکیت — ہر اثاثے پر <strong>حول آغاز</strong> مقرر کریں۔</li>" +
+          "<li><strong>شرح:</strong> <strong>2.5%</strong> (چالیسواں حصہ) جب کل زکات کے قابل دولت نصاب سے زیادہ ہو۔</li>" +
+          "<li><strong>نصاب (" + rulesLabel + "):</strong> " + nisabLine + "۔ مذہب مارکیٹ ریٹس ٹیب پر تبدیل کریں۔</li>" +
+          "<li><strong>زیورات:</strong> " + jewelryLine + "</li>" +
+          "<li><strong>سالانہ، ماہانہ نہیں:</strong> اپنی زکات تاریخ پر <strong>کل نقدی</strong> درج کریں — ہر تنخواہ یا کرایے پر 2.5% نہیں۔</li>" +
+          "<li><strong>زکات الفطر</strong> الگ ہے اور یہاں حساب نہیں ہوتی۔</li>";
+      },
+      calc_sub: "فی رکن اثاثے ← بیس لائن تاریخ پر قدریں ← نصاب جانچ ← ریٹس ← منہا ادائیگیاں۔",
+      calc_th: ["قسم", "اس ایپ میں"],
+      calc_rows: function(debtLine) { return [
+        ["سونا / چاندی / پلاٹینم / ہیرا", "گرام یا مارکیٹ قیمت ← نصاب سے اوپر <strong>2.5%</strong> کا حصہ"],
+        ["نقدی / PF / اسٹاکس / کاروبار", "بیلنس پر <strong>سالانہ 2.5%</strong> (PF بیان و شراکت سے متوقع)"],
+        ["جائیداد", "گھر/کرایہ چھوٹ؛ <strong>فروخت کے لیے</strong> ← مارکیٹ قیمت پر 2.5%؛ کرایہ ← <strong>نقدی</strong>"],
+        ["مویشی / زراعت / رکاز", "سنت کے درجات / فصل % / رکاز پر <strong>ایک بار 20%</strong>"],
+        ["ذمہ داریاں", debtLine],
+        ["باقی", "واجب − ادائیگیاں"],
+      ]; },
+      calc_rate_note: function(g, s) { return "موجودہ ریٹس: سونا " + g + "/گرام، چاندی " + s + "/گرام۔"; },
+      schools_sub: function(label) { return "موجودہ: <strong>" + label + "</strong> (مارکیٹ ریٹس ٹیب پر تبدیل کریں)۔"; },
+      schools_th: ["حکم", ""],
+      schools_r_nisab: "نصاب", schools_r_jewelry: "پہنے ہوئے زیورات", schools_r_debts: "قرضہ",
+      schools_v_silver: "چاندی", schools_v_gold: "سونا",
+      schools_v_exempt: "چھوٹ دے سکتے ہیں", schools_v_allgold: "تمام سونا/چاندی",
+      schools_v_none: "کوئی نہیں", schools_v_cash: "صرف نقدی", schools_v_full: "مکمل",
+      using_ol: "<li><strong>ڈیش بورڈ</strong> — ریٹس خلاصہ، گھرانے کی کل رقم، افراد اور اثاثے۔</li><li><strong>اینالیٹکس</strong> — وقت کے ساتھ دولت اور زکات کا تجزیہ۔</li><li><strong>سالانہ جائزہ</strong> — ماضی کے سالوں کی اثاثہ قدریں ریکارڈ کریں۔</li><li><strong>مارکیٹ ریٹس</strong> — فقہی مذہب، دستی یا لائیو ریٹس، سالانہ تاریخ۔</li><li><strong>بیک اپ و بحالی</strong> — ایکسل ایکسپورٹ، گوگل ڈرائیو آٹو سیو، اور فائل یا ڈرائیو سے بحالی۔</li>",
+      disclaimer_p: "صرف تعلیمی آلہ۔ ادا کرنے سے پہلے رقم اور مستحقین کی تصدیق کسی <strong>اہل عالم</strong> سے کریں۔ مارکیٹ ریٹس اشارتی ہیں۔",
+      faq_a: function(rules, debtAns, jewelryAns) { return [
+        "<strong>نہیں۔</strong> یہ عالم کے مراجعت شدہ ڈیفالٹس کے ساتھ ایک گھریلو کیلکولیٹر ہے۔ ادا کرنے سے پہلے کسی اہل عالم سے تصدیق کریں۔",
+        "زکات واجب ہونے سے پہلے کم از کم زکات کے قابل دولت۔ یہ ایپ آپ کی <strong>" + rules.label + "</strong> ترتیب کے مطابق سونے یا چاندی کے وزن × ریٹس استعمال کرتی ہے۔",
+        "عام طور پر: <strong>نصاب</strong> سے کم؛ ابھی <strong>حول</strong> میں؛ جائیداد <strong>ذاتی/کرایہ</strong> ہے؛ زیورات <strong>ذاتی استعمال</strong> میں نشان زد (جہاں چھوٹ ہو)؛ یا قدریں ابھی درج نہیں کی گئیں۔",
+        "نقدی، اسٹاکس، تجارتی جائیداد، اور دھاتوں کے لیے <strong>آج کی مارکیٹ قیمت</strong>۔ زکات آپ کی زکات تاریخ پر دولت کی قیمت پر ہے، خرید قیمت پر نہیں۔",
+        "عمارت پر <strong>نہیں</strong> — <strong>جائیداد ← ذاتی رہائش</strong>۔ یہ اینالیٹکس میں ریکارڈ کے لیے دکھ سکتی ہے لیکن زکات سے مستثنیٰ ہے۔",
+        "دو <strong>جائیداد</strong> اثاثے: اپنے گھر کے لیے <strong>ذاتی رہائش</strong>، دوسرے کے لیے <strong>کرایہ</strong> یا <strong>فروخت / تجارت</strong>۔ کرایہ وصولی ← <strong>نقدی</strong>۔",
+        "<strong>موجودہ مارکیٹ قیمت</strong> استعمال کریں، ذیلی قسم <strong>تجارت</strong>، حول خریداری سے۔ خریدا ₹1L، اب ₹7L ← <strong>₹7L</strong> درج کریں؛ زکات ≈ ₹7L کا 2.5% اگر نصاب سے اوپر — صرف 'منافع' کا 2.5% نہیں۔",
+        "زکات کے قابل دولت کی ~<strong>354 قمری دن</strong> کی ملکیت۔ اثاثہ ملنے یا خریدنے پر <strong>حول آغاز</strong> مقرر کریں۔ حول میں موجود دولت سال مکمل ہونے تک مستثنیٰ ہے۔",
+        "بہت سے خاندان <strong>رمضان</strong> استعمال کرتے ہیں۔ اس ایپ کی بیس لائن <strong>رمضان کی پہلی جمعہ</strong> (ام القریٰ) ہے؛ ہیڈر آج اور وہ بیس لائن دکھاتا ہے۔",
+        "<strong>سالانہ</strong> — قمری سال میں ایک بار، ماہانہ نہیں۔ نقدی: آپ کی زکات تاریخ پر جو ابھی ہے × 2.5% اگر نصاب سے اوپر۔ کرایہ: عمارت مستثنیٰ؛ وصول شدہ کرایہ ← <strong>نقدی</strong>۔",
+        jewelryAns,
+        "<strong>رکاز (رِکاز)</strong> دفینہ خزانہ یا وہ دولت ہے جسے آپ کا عالم رکاز قرار دے — تنخواہ، FD، یا اسٹاکس نہیں۔ یہ ایپ: <strong>ایک بار 20%</strong>، سالانہ 2.5% نہیں۔ زمرہ <strong>رکاز</strong> استعمال کریں۔",
+        "<strong>زکات</strong> — اضافی دولت پر مقررہ حق۔ <strong>صدقہ</strong> — رضاکارانہ۔ <strong>زکات الفطر</strong> — رمضان کے آخر میں فی فرد؛ اس کیلکولیٹر میں <strong>نہیں</strong> ہے۔",
+        "<strong>ذمہ داریاں</strong> شامل کریں۔ <strong>" + rules.label + "</strong> کے ساتھ: " + debtAns + " گھر کے قرضے خودبخود جائیداد سے منسلک نہیں — اپنے عالم سے پوچھیں۔",
+        "<strong>جو بینک میں باقی ہے</strong> آپ کی زکات تاریخ پر۔ زندگی کے اخراجات پر خرچ کی گئی تنخواہ زکات کے قابل نہیں۔",
+        "<strong>PF / EPF:</strong> زمرہ <strong>PF</strong> — بیان بیلنس، تاریخ، ماہانہ شراکت، متوقع بیلنس (ڈیفالٹ 8.25% سالانہ)۔ <strong>فنڈز / اسٹاکس:</strong> موجودہ کل قیمت کے ساتھ <strong>اسٹاکس</strong>۔",
+        "ڈیش بورڈ <strong>موجودہ سال</strong> دکھاتا ہے۔ <strong>سالانہ جائزہ</strong> استعمال کریں تاکہ پچھلے سالوں کے بیلنس ریکارڈ ہوں اور اینالیٹکس میں آئیں، اور اپنے عالم کے ساتھ بقایا زکات حساب کریں۔",
+        "فی رکن ← <strong>+ ادائیگی</strong>: وصول کنندہ اور رقم۔ <strong>باقی</strong> = واجب − ادا شدہ۔",
+        "قرآن 9:60: فقیر، مسکین، عاملین، مؤلفة القلوب، غلام، مقروض، فی سبیل اللہ، مسافر۔ آپ کا عالم اہل وصول کنندگان کی رہنمائی کر سکتا ہے۔",
+        "بہت سے کیلکولیٹر صرف سونے کا نصاب استعمال کرتے ہیں۔ <strong>حنفی</strong> اکثر <strong>تمام مجموعی دولت</strong> کا موازنہ <strong>چاندی کے نصاب</strong> (کم حد) سے کرتے ہیں۔ حنفی منتخب ہونے پر یہ ایپ اسی کی پیروی کرتی ہے۔",
+        "پہلی بار، اپنے کمپیوٹر یا گوگل ڈرائیو سے بیک اپ منتخب کریں۔ بعد میں، <strong>بیک اپ و بحالی</strong> ٹیب استعمال کریں۔",
+        "<strong>حاصل کردہ سال</strong> مقرر کریں اور <strong>سالانہ جائزہ</strong> میں وقت کے ساتھ بیلنس ریکارڈ کریں؛ دھاتیں سالانہ ریٹس استعمال کرتی ہیں۔",
+        "<strong>ہاں۔</strong> متعدد <strong>خاندان کے افراد</strong> شامل کریں؛ زکات فی فرد حساب ہوتی ہے اور ڈیش بورڈ پر جمع ہوتی ہے۔",
+      ]; },
+    },
+
+    ar: {
+      app_p1: "آلة حساب زكاة الأسرة: أضف <strong>أفراد الأسرة</strong>، سجّل <strong>الأصول</strong> بعملتك، حدّد <strong>أسعار السوق</strong>، واطّلع على <strong>المستحق والمدفوع والمتبقي</strong> في لوحة التحكم. عند الفتح الأول، اختر نسخة Excel من حاسوبك أو Google Drive. تتولى علامة تبويب <strong>النسخ الاحتياطي</strong> التصدير والمزامنة. كل شيء يعمل في متصفحك؛ تبقى البيانات على جهازك.",
+      app_ul: "<li><strong>ليست فتوى</strong> — تأكّد مع عالِمك.</li><li><strong>2.5%</strong> على الثروة الزكوية عند النصاب أو ما فوقه؛ أحكام المذهب للمجوهرات والديون.</li><li><strong>تاريخ احتساب الزكاة:</strong> أول جمعة من رمضان (يظهر في الرأس).</li>",
+      what_p1: "<strong>الزكاة</strong> هي الصدقة السنوية الواجبة على الثروة الفائضة المحتفظ بها لحول قمري — الركن الثالث من أركان الإسلام. على خلاف <em>الصدقة</em> الطوعية، هي حق مقرر للفقراء حين تبلغ الثروة النصاب.",
+      what_p2: "المستحقون في القرآن الكريم (9:60): الفقراء، والمساكين، والعاملون عليها، والمؤلَّفة قلوبهم، والرقاب، والغارمون، وفي سبيل الله، وابن السبيل.",
+      when_ul: function(nisabLine, jewelryLine, debtLine, rulesLabel) {
+        return "<li><strong>الحول:</strong> ~354 يومًا قمريًا من الامتلاك — حدّد <strong>بداية الحول</strong> لكل أصل.</li>" +
+          "<li><strong>النسبة:</strong> <strong>2.5%</strong> (ربع العشر) حين تبلغ الثروة الزكوية النصاب.</li>" +
+          "<li><strong>النصاب (" + rulesLabel + "):</strong> " + nisabLine + ". غيّر المذهب من علامة تبويب أسعار السوق.</li>" +
+          "<li><strong>المجوهرات:</strong> " + jewelryLine + "</li>" +
+          "<li><strong>سنويًا لا شهريًا:</strong> أدخل <strong>إجمالي النقد</strong> في تاريخ زكاتك — لا 2.5% على كل راتب أو إيجار.</li>" +
+          "<li><strong>زكاة الفطر</strong> منفصلة ولا تُحسب هنا.</li>";
+      },
+      calc_sub: "أصول كل فرد ← قيم في تاريخ الاحتساب ← التحقق من النصاب ← الأسعار ← طرح المدفوعات.",
+      calc_th: ["النوع", "في هذا التطبيق"],
+      calc_rows: function(debtLine) { return [
+        ["الذهب / الفضة / البلاتين / الماس", "غرامات أو قيمة السوق ← حصة <strong>2.5%</strong> عند تجاوز النصاب"],
+        ["النقد / صندوق التوفير / الأسهم / التجارة", "<strong>2.5% سنويًا</strong> على الأرصدة (صندوق التوفير متوقع من البيان + المساهمات)"],
+        ["العقارات", "المنزل/الإيجار معفى؛ <strong>للبيع</strong> ← 2.5% من قيمة السوق؛ الإيجار ← <strong>نقد</strong>"],
+        ["الماشية / الزراعة / الركاز", "الحدود الشرعية / نسبة الحصاد / <strong>20% مرة واحدة</strong> للركاز"],
+        ["الالتزامات", debtLine],
+        ["المتبقي", "المستحق − المدفوعات"],
+      ]; },
+      calc_rate_note: function(g, s) { return "الأسعار الحالية: ذهب " + g + "/غ، فضة " + s + "/غ."; },
+      schools_sub: function(label) { return "الحالي: <strong>" + label + "</strong> (غيّر من علامة تبويب الأسعار)."; },
+      schools_th: ["الحكم", ""],
+      schools_r_nisab: "النصاب", schools_r_jewelry: "المجوهرات المُلبَسة", schools_r_debts: "الديون",
+      schools_v_silver: "فضة", schools_v_gold: "ذهب",
+      schools_v_exempt: "يمكن الإعفاء", schools_v_allgold: "كل الذهب/الفضة",
+      schools_v_none: "لا شيء", schools_v_cash: "النقد فقط", schools_v_full: "كاملة",
+      using_ol: "<li><strong>لوحة التحكم</strong> — ملخص الأسعار، مجاميع الأسرة، الأعضاء والأصول.</li><li><strong>التحليلات</strong> — الثروة والزكاة عبر الزمن.</li><li><strong>المراجعة السنوية</strong> — سجّل قيم الأصول في السنوات الماضية.</li><li><strong>أسعار السوق</strong> — اختيار المذهب، أسعار يدوية أو مباشرة.</li><li><strong>النسخ الاحتياطي والاستعادة</strong> — تصدير Excel، حفظ تلقائي على Google Drive.</li>",
+      disclaimer_p: "أداة تعليمية فحسب. تأكّد من المبالغ والمستحقين مع <strong>عالِم مؤهَّل</strong> قبل الدفع. أسعار السوق استرشادية.",
+      faq_a: function(rules, debtAns, jewelryAns) { return [
+        "<strong>لا.</strong> هي آلة حساب للأسرة بإعدادات راجعها علماء. تأكّد مع عالِم مؤهَّل قبل الدفع.",
+        "الحد الأدنى للثروة الزكوية قبل وجوب الزكاة. يستخدم هذا التطبيق أوزان الذهب أو الفضة × الأسعار وفق إعداد <strong>" + rules.label + "</strong>.",
+        "عادةً: دون <strong>النصاب</strong>؛ لا يزال في <strong>الحول</strong>؛ العقار <strong>سكني/إيجاري</strong>؛ المجوهرات موسومة بـ<strong>الاستخدام الشخصي</strong>؛ أو لم تُدخَل القيم بعد.",
+        "<strong>قيمة السوق اليوم</strong> للنقد والأسهم والعقارات التجارية والمعادن. الزكاة على ما تساويه الثروة في تاريخ زكاتك، لا على سعر الشراء.",
+        "<strong>لا</strong> على المبنى — <strong>العقارات ← السكن الشخصي</strong>. قد يظهر في التحليلات للسجلات لكنه مستثنى من الزكاة.",
+        "أصلان من نوع <strong>العقارات</strong>: <strong>السكن الشخصي</strong> لمنزلك، <strong>الإيجار</strong> أو <strong>للبيع/التجارة</strong> للآخر. الإيجار المحصَّل ← <strong>نقد</strong>.",
+        "استخدم <strong>قيمة السوق الحالية</strong>، النوع الفرعي <strong>تجارة</strong>، الحول من تاريخ الشراء.",
+        "~<strong>354 يومًا قمريًا</strong> من امتلاك الثروة الزكوية. حدّد <strong>بداية الحول</strong> حين استلمت الأصل أو اشتريته.",
+        "تستخدم كثير من الأسر <strong>رمضان</strong>. تاريخ احتساب هذا التطبيق هو <strong>أول جمعة من رمضان</strong> (أم القرى).",
+        "<strong>سنويًا</strong> — مرة واحدة في العام القمري. النقد: ما تملكه في تاريخ زكاتك × 2.5% إن بلغ النصاب.",
+        jewelryAns,
+        "<strong>الركاز</strong> هو الكنز المدفون أو ما يحكم عالِمك بأنه ركاز — لا الراتب أو الودائع أو الأسهم. هذا التطبيق: <strong>20% مرة واحدة</strong>.",
+        "<strong>الزكاة</strong> — حق مقرر على الثروة الفائضة. <strong>الصدقة</strong> — طوعية. <strong>زكاة الفطر</strong> — في نهاية رمضان لكل فرد؛ <strong>غير</strong> مشمولة هنا.",
+        "أضف <strong>الالتزامات</strong>. مع <strong>" + rules.label + "</strong>: " + debtAns + " القروض العقارية غير مرتبطة تلقائيًا بالعقار — استشر عالِمك.",
+        "<strong>ما تبقّى في البنك</strong> في تاريخ زكاتك. الراتب المنفَق على نفقات المعيشة غير زكوي.",
+        "<strong>صندوق التوفير:</strong> فئة <strong>PF</strong> — رصيد البيان، تاريخه، المساهمات الشهرية. <strong>الصناديق/الأسهم:</strong> القيمة الإجمالية الحالية.",
+        "تعرض لوحة التحكم <strong>السنة الحالية</strong>. استخدم <strong>المراجعة السنوية</strong> لتسجيل أرصدة السنوات الماضية.",
+        "لكل فرد ← <strong>+ دفعة</strong>: المستلم والمبلغ. <strong>المتبقي</strong> = المستحق − المدفوع.",
+        "القرآن 9:60: الفقراء، المساكين، العاملون، المؤلَّفة قلوبهم، الرقاب، الغارمون، في سبيل الله، ابن السبيل.",
+        "تستخدم كثير من الآلات نصاب الذهب فقط. <strong>الحنفية</strong> غالبًا يقارنون <strong>مجموع الثروة</strong> بنصاب الفضة (الحد الأدنى). يتّبع هذا التطبيق ذلك عند اختيار الحنفية.",
+        "في الزيارة الأولى، اختر نسخة احتياطية من حاسوبك أو Google Drive. لاحقًا، استخدم علامة تبويب <strong>النسخ الاحتياطي والاستعادة</strong>.",
+        "حدّد <strong>سنة الاقتناء</strong> وسجّل الأرصدة في <strong>المراجعة السنوية</strong>.",
+        "<strong>نعم.</strong> أضف عدة <strong>أفراد من الأسرة</strong>؛ تُحسب الزكاة لكل فرد وتُجمَع في لوحة التحكم.",
+      ]; },
+    },
+
+    hi: {
+      app_p1: "परिवार के लिए घरेलू ज़कात कैलकुलेटर: <strong>परिवार के सदस्य</strong> जोड़ें, अपनी करेंसी में <strong>संपत्ति</strong> दर्ज करें, <strong>बाज़ार दर</strong> सेट करें, और डैशबोर्ड पर <strong>देय, भुगतान, और शेष</strong> देखें। पहली बार खोलने पर अपने कंप्यूटर या Google Drive से Excel बैकअप चुनें। <strong>बैकअप</strong> टैब एक्सपोर्ट और Drive सिंक संभालता है। सब कुछ आपके ब्राउज़र में चलता है; डेटा आपके डिवाइस पर रहता है।",
+      app_ul: "<li><strong>फ़तवा नहीं</strong> — अपने विद्वान से पुष्टि करें।</li><li>निसाब पर या उससे अधिक ज़कात योग्य धन पर <strong>2.5%</strong>; गहनों और कर्ज़ के मज़हबी नियम।</li><li><strong>ज़कात बेसलाइन:</strong> रमज़ान का पहला शुक्रवार (हेडर में दिखाया जाता है)।</li>",
+      what_p1: "<strong>ज़कात</strong> इस्लाम का तीसरा स्तंभ है — एक चंद्र वर्ष तक रखी गई अधिशेष संपत्ति पर अनिवार्य वार्षिक दान। स्वैच्छिक <em>सदक़ह</em> के विपरीत, यह निसाब पहुँचने पर ग़रीबों का एक निश्चित अधिकार है।",
+      what_p2: "क़ुरआन (9:60) में उल्लिखित हकदार: ग़रीब, ज़रूरतमंद, संग्राहक, दिल मिलाए जाने वाले, क़ैदी, क़र्ज़दार, अल्लाह की राह में, और मुसाफ़िर।",
+      when_ul: function(nisabLine, jewelryLine, debtLine, rulesLabel) {
+        return "<li><strong>हौल:</strong> ~354 चंद्र दिनों की स्वामित्व — प्रत्येक संपत्ति पर <strong>हौल स्टार्ट</strong> सेट करें।</li>" +
+          "<li><strong>दर:</strong> <strong>2.5%</strong> (चालीसवाँ भाग) जब कुल ज़कात योग्य धन निसाब से ≥ हो।</li>" +
+          "<li><strong>निसाब (" + rulesLabel + "):</strong> " + nisabLine + "। मज़हब मार्केट रेट्स टैब पर बदलें।</li>" +
+          "<li><strong>गहने:</strong> " + jewelryLine + "</li>" +
+          "<li><strong>सालाना, मासिक नहीं:</strong> अपनी ज़कात तारीख पर <strong>कुल नकद</strong> दर्ज करें।</li>" +
+          "<li><strong>ज़कात-उल-फ़ित्र</strong> अलग है और यहाँ गणना नहीं होती।</li>";
+      },
+      calc_sub: "प्रति सदस्य संपत्ति → बेसलाइन तारीख पर मूल्य → निसाब जाँच → दरें → भुगतान घटाएँ।",
+      calc_th: ["प्रकार", "इस ऐप में"],
+      calc_rows: function(debtLine) { return [
+        ["सोना / चाँदी / प्लैटिनम / हीरा", "ग्राम या बाज़ार मूल्य → निसाब से ऊपर <strong>2.5%</strong> का हिस्सा"],
+        ["नकद / PF / स्टॉक / व्यापार", "बैलेंस पर <strong>सालाना 2.5%</strong>"],
+        ["संपत्ति", "घर/किराया छूट; <strong>बिक्री के लिए</strong> → 2.5%; किराया → <strong>नकद</strong>"],
+        ["पशु / कृषि / रिकाज़", "सुन्नत स्तर / फ़सल % / रिकाज़ पर <strong>एक बार 20%</strong>"],
+        ["देनदारियाँ", debtLine],
+        ["शेष", "देय − भुगतान"],
+      ]; },
+      calc_rate_note: function(g, s) { return "वर्तमान दरें: सोना " + g + "/ग्राम, चाँदी " + s + "/ग्राम।"; },
+      schools_sub: function(label) { return "वर्तमान: <strong>" + label + "</strong> (मार्केट रेट्स टैब पर बदलें)।"; },
+      schools_th: ["नियम", ""],
+      schools_r_nisab: "निसाब", schools_r_jewelry: "पहने गहने", schools_r_debts: "क़र्ज़",
+      schools_v_silver: "चाँदी", schools_v_gold: "सोना",
+      schools_v_exempt: "छूट दे सकते हैं", schools_v_allgold: "सभी सोना/चाँदी",
+      schools_v_none: "कोई नहीं", schools_v_cash: "केवल नकद", schools_v_full: "पूर्ण",
+      using_ol: "<li><strong>डैशबोर्ड</strong> — दर सारांश, परिवार का कुल, सदस्य और संपत्ति।</li><li><strong>एनालिटिक्स</strong> — समय के साथ धन और ज़कात।</li><li><strong>वार्षिक समीक्षा</strong> — पिछले वर्षों की संपत्ति मूल्य रिकॉर्ड करें।</li><li><strong>मार्केट रेट्स</strong> — मज़हब चुनें, मैनुअल/लाइव दरें।</li><li><strong>बैकअप और रीस्टोर</strong> — Excel एक्सपोर्ट, Google Drive ऑटो-सेव।</li>",
+      disclaimer_p: "केवल शैक्षिक उपकरण। भुगतान से पहले <strong>योग्य विद्वान</strong> से राशि और हकदारों की पुष्टि करें। बाज़ार दरें सांकेतिक हैं।",
+      faq_a: function(rules, debtAns, jewelryAns) { return [
+        "<strong>नहीं।</strong> यह विद्वान-समीक्षित डिफ़ॉल्ट के साथ एक घरेलू कैलकुलेटर है। भुगतान से पहले योग्य विद्वान से पुष्टि करें।",
+        "ज़कात देय होने से पहले न्यूनतम ज़कात योग्य धन। यह ऐप आपकी <strong>" + rules.label + "</strong> सेटिंग के अनुसार सोने या चाँदी के वज़न × दरें उपयोग करता है।",
+        "आमतौर पर: <strong>निसाब</strong> से कम; अभी <strong>हौल</strong> में; संपत्ति <strong>व्यक्तिगत/किराया</strong> है; गहने <strong>व्यक्तिगत उपयोग</strong> में चिह्नित; या मूल्य अभी दर्ज नहीं।",
+        "नकद, शेयर, व्यापारिक संपत्ति और धातुओं के लिए <strong>आज का बाज़ार मूल्य</strong>।",
+        "इमारत पर <strong>नहीं</strong> — <strong>संपत्ति → व्यक्तिगत आवास</strong>। एनालिटिक्स में रिकॉर्ड के लिए दिख सकता है लेकिन ज़कात से बाहर।",
+        "दो <strong>संपत्ति</strong> एसेट: अपने घर के लिए <strong>व्यक्तिगत आवास</strong>, दूसरे के लिए <strong>किराया</strong> या <strong>बिक्री/व्यापार</strong>।",
+        "<strong>वर्तमान बाज़ार मूल्य</strong> उपयोग करें, उपप्रकार <strong>व्यापार</strong>, हौल खरीद से।",
+        "ज़कात योग्य धन के ~<strong>354 चंद्र दिन</strong> की स्वामित्व। संपत्ति मिलने या खरीदने पर <strong>हौल स्टार्ट</strong> सेट करें।",
+        "कई परिवार <strong>रमज़ान</strong> उपयोग करते हैं। इस ऐप की बेसलाइन <strong>रमज़ान का पहला शुक्रवार</strong> (उम्म अल-क़ुरा) है।",
+        "<strong>सालाना</strong> — चंद्र वर्ष में एक बार, मासिक नहीं।",
+        jewelryAns,
+        "<strong>रिकाज़</strong> दफ़न खज़ाना या वह धन है जिसे आपका विद्वान रिकाज़ घोषित करे। यह ऐप: <strong>एक बार 20%</strong>।",
+        "<strong>ज़कात</strong> — अधिशेष धन पर निश्चित अधिकार। <strong>सदक़ह</strong> — स्वैच्छिक। <strong>ज़कात-उल-फ़ित्र</strong> — रमज़ान के अंत में प्रति व्यक्ति; इस कैलकुलेटर में <strong>नहीं</strong>।",
+        "<strong>देनदारियाँ</strong> जोड़ें। <strong>" + rules.label + "</strong> के साथ: " + debtAns,
+        "<strong>आपकी ज़कात तारीख पर बैंक में जो बचा है</strong>। जीवन-यापन पर खर्च किया वेतन ज़कात योग्य नहीं।",
+        "<strong>PF / EPF:</strong> श्रेणी <strong>PF</strong>। <strong>फंड/शेयर:</strong> वर्तमान कुल मूल्य के साथ <strong>स्टॉक्स</strong>।",
+        "डैशबोर्ड <strong>वर्तमान वर्ष</strong> दिखाता है। पिछले वर्षों के बैलेंस रिकॉर्ड करने के लिए <strong>वार्षिक समीक्षा</strong> उपयोग करें।",
+        "प्रति सदस्य → <strong>+ भुगतान</strong>: प्राप्तकर्ता और राशि। <strong>शेष</strong> = देय − भुगतान।",
+        "क़ुरआन 9:60: ग़रीब, ज़रूरतमंद, संग्राहक, दिल मिलाए जाने वाले, क़ैदी, क़र्ज़दार, अल्लाह की राह में, मुसाफ़िर।",
+        "कई कैलकुलेटर केवल सोने का निसाब उपयोग करते हैं। <strong>हनफ़ी</strong> अक्सर <strong>समस्त धन</strong> की तुलना <strong>चाँदी के निसाब</strong> से करते हैं।",
+        "पहली बार, अपने कंप्यूटर या Google Drive से बैकअप चुनें। बाद में, <strong>बैकअप और रीस्टोर</strong> टैब उपयोग करें।",
+        "<strong>अर्जित वर्ष</strong> सेट करें और <strong>वार्षिक समीक्षा</strong> में समय के साथ बैलेंस रिकॉर्ड करें।",
+        "<strong>हाँ।</strong> कई <strong>परिवार के सदस्य</strong> जोड़ें; ज़कात प्रति व्यक्ति गणना होती है और डैशबोर्ड पर जोड़ी जाती है।",
+      ]; },
+    },
+  };
 
   // Button-driven collapse (same pattern as the server app's panel_section macro).
   function collapsible(title, bodyNodes, expanded) {
@@ -2738,16 +2964,16 @@
 
     // Sub-navigation: About / FAQ
     const navPanel = el("div", { class: "panel" });
-    navPanel.appendChild(el("h2", { text: "Learn about Zakat" }));
+    navPanel.appendChild(el("h2", { text: Help.t("guide_learn") }));
     const subnav = el("div", { class: "subnav" }, [
-      el("button", { class: "subnav-btn " + (guideView === "guide" ? "active" : ""), text: "About Zakat", onclick: () => { guideView = "guide"; renderGuide(); } }),
-      el("button", { class: "subnav-btn " + (guideView === "faq" ? "active" : ""), text: "FAQ", onclick: () => { guideView = "faq"; renderGuide(); } }),
+      el("button", { class: "subnav-btn " + (guideView === "guide" ? "active" : ""), text: Help.t("guide_tab_about"), onclick: () => { guideView = "guide"; renderGuide(); } }),
+      el("button", { class: "subnav-btn " + (guideView === "faq" ? "active" : ""), text: Help.t("guide_tab_faq"), onclick: () => { guideView = "faq"; renderGuide(); } }),
     ]);
     navPanel.appendChild(subnav);
-    navPanel.appendChild(el("p", { class: "sub", text: "Current school: " + rules.label + " (change it on the Market Rates tab)." }));
+    navPanel.appendChild(el("p", { class: "sub", text: Help.t("guide_cur_school") + " " + rules.label + " — " + Help.t("guide_change_school") }));
     const expandRow = el("div", { class: "btn-row" }, [
-      el("button", { class: "link", text: "Expand all", onclick: () => setAllPanelsCollapsed(panel, false) }),
-      el("button", { class: "link", text: "Collapse all", onclick: () => setAllPanelsCollapsed(panel, true) }),
+      el("button", { class: "link", text: Help.t("guide_expand_all"), onclick: () => setAllPanelsCollapsed(panel, false) }),
+      el("button", { class: "link", text: Help.t("guide_collapse_all"), onclick: () => setAllPanelsCollapsed(panel, true) }),
     ]);
     navPanel.appendChild(expandRow);
     panel.appendChild(navPanel);
@@ -2759,6 +2985,8 @@
   }
 
   function buildGuideSections(root, madhab, rules, allMadhabs) {
+    const lang = Help.getLang();
+    const gc = GUIDE_CONTENT[lang] || GUIDE_CONTENT["en"];
     const sessionRates = Store.getRates();
     const goldRate = sessionRates.gold_inr_per_gram, silverRate = sessionRates.silver_inr_per_gram;
     const nisabLine = rules.nisab_basis === "silver"
@@ -2770,45 +2998,37 @@
     const debtLine = rules.debt_deduction === "none" ? "Not deducted (" + rules.label + ")"
       : rules.debt_deduction === "cash_only" ? "From cash only" : "Deducted from investments";
 
-    root.appendChild(collapsible("About this app", [
-      html("p", "Household Zakat calculator for families: add <strong>family members</strong>, record <strong>assets</strong> in your currency, set <strong>market rates</strong>, and see <strong>due, paid, and remaining</strong> on the dashboard. On first open, choose an Excel backup from your computer or Google Drive. The <strong>Backup</strong> tab handles export and Drive sync. Everything runs in your browser; data stays on your device."),
-      html("ul", "<li><strong>Not a fatwa</strong> \u2014 confirm with your scholar.</li><li><strong>2.5%</strong> on zakatable wealth at/above nisab; madhhab rules for jewelry and debts.</li><li><strong>Zakat baseline:</strong> first Friday of Ramadan (shown in the header).</li>"),
+    root.appendChild(collapsible(Help.t("guide_s_app"), [
+      html("p", gc.app_p1),
+      html("ul", gc.app_ul),
     ]));
 
-    root.appendChild(collapsible("What is Zakat?", [
+    root.appendChild(collapsible(Help.t("guide_s_what"), [
       el("p", { class: "arabic", lang: "ar", dir: "rtl", text: "\u0632\u0643\u0627\u0629" }),
-      html("p", "<strong>Zakat</strong> is the obligatory annual charity on surplus wealth held for one lunar year \u2014 the third pillar of Islam. Unlike voluntary <em>sadaqah</em>, it is a fixed right of the poor once wealth reaches <em>nisab</em> (\u0646\u0635\u0627\u0628)."),
-      html("p", "Recipients are named in the Qur\u2019an (9:60): poor, needy, collectors, those whose hearts are reconciled, captives, debtors, in Allah\u2019s cause, and stranded travellers."),
+      html("p", gc.what_p1),
+      html("p", gc.what_p2),
     ]));
 
-    root.appendChild(collapsible("When and how it is due", [
-      html("ul",
-        "<li><strong>Hawl:</strong> ~354 lunar days of possession \u2014 set <strong>Hawl start</strong> on each asset.</li>" +
-        "<li><strong>Rate:</strong> <strong>2.5%</strong> (one-fortieth) when total zakatable wealth \u2265 nisab.</li>" +
-        "<li><strong>Nisab (" + rules.label + "):</strong> " + nisabLine + ". Change school on the Market Rates tab.</li>" +
-        "<li><strong>Jewelry:</strong> " + jewelryLine + "</li>" +
-        "<li><strong>Yearly, not monthly:</strong> enter <strong>total cash</strong> on your Zakat date \u2014 not 2.5% on each salary or rent cheque.</li>" +
-        "<li><strong>Zakat al-Fitr</strong> is separate and not calculated here.</li>"),
+    root.appendChild(collapsible(Help.t("guide_s_when"), [
+      html("ul", gc.when_ul(nisabLine, jewelryLine, debtLine, rules.label)),
     ]));
 
-    const calcTable =
-      "<table class='guide-table'><thead><tr><th>Type</th><th>In this app</th></tr></thead><tbody>" +
-      "<tr><td>Gold / silver / platinum / diamond</td><td>Grams or market value \u2192 share of <strong>2.5%</strong> when above nisab</td></tr>" +
-      "<tr><td>Cash / PF / stocks / business</td><td><strong>2.5% yearly</strong> on balances (PF projected from statement + contributions)</td></tr>" +
-      "<tr><td>Property</td><td>Home/rental building exempt; <strong>for sale</strong> \u2192 2.5% on market value; rent \u2192 <strong>Cash</strong></td></tr>" +
-      "<tr><td>Livestock / agriculture / rikaz</td><td>Sunnah tiers / harvest % / <strong>20% once</strong> for rikaz</td></tr>" +
-      "<tr><td>Liabilities</td><td>" + debtLine + "</td></tr>" +
-      "<tr><td>Remaining</td><td>Due \u2212 payments</td></tr>" +
-      "</tbody></table>";
-    root.appendChild(collapsible("How this app calculates", [
-      html("p", "Per-member assets \u2192 values at baseline date \u2192 nisab check \u2192 rates \u2192 minus payments.", "sub"),
+    // Calc table \u2014 always use en strings for column labels (rows are translated via gc)
+    const calcRows = gc.calc_rows(debtLine);
+    const calcTh = gc.calc_th;
+    let calcTbody = "";
+    calcRows.forEach((r) => { calcTbody += "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>"; });
+    const calcTable = "<table class='guide-table'><thead><tr><th>" + calcTh[0] + "</th><th>" + calcTh[1] + "</th></tr></thead><tbody>" + calcTbody + "</tbody></table>";
+    root.appendChild(collapsible(Help.t("guide_s_calc"), [
+      html("p", gc.calc_sub, "sub"),
       html("div", calcTable, "table-wrap"),
-      html("p", "Session rates until you fetch: gold " + ZK.fmtINR(goldRate) + "/g, silver " + ZK.fmtINR(silverRate) + "/g.", "help"),
+      html("p", gc.calc_rate_note(ZK.fmtINR(goldRate), ZK.fmtINR(silverRate)), "help"),
     ]));
 
     // Schools comparison table (current highlighted)
     const keys = Object.keys(allMadhabs);
-    let headRow = "<tr><th>Rule</th>";
+    const schoolsTh = gc.schools_th;
+    let headRow = "<tr><th>" + schoolsTh[0] + "</th>";
     keys.forEach((k) => { headRow += "<th" + (k === madhab ? " class='hl'" : "") + ">" + allMadhabs[k].label + (k === madhab ? " \u2713" : "") + "</th>"; });
     headRow += "</tr>";
     function row(label, fn) {
@@ -2817,65 +3037,50 @@
       return r + "</tr>";
     }
     const schoolsTable = "<table class='guide-table'><thead>" + headRow + "</thead><tbody>" +
-      row("Nisab", (r) => r.nisab_basis === "silver" ? "Silver" : "Gold") +
-      row("Worn jewelry", (r) => r.jewelry_exempt ? "Can exempt" : "All gold/silver") +
-      row("Debts", (r) => r.debt_deduction === "none" ? "None" : (r.debt_deduction === "cash_only" ? "Cash only" : "Full")) +
+      row(gc.schools_r_nisab, (r) => r.nisab_basis === "silver" ? gc.schools_v_silver : gc.schools_v_gold) +
+      row(gc.schools_r_jewelry, (r) => r.jewelry_exempt ? gc.schools_v_exempt : gc.schools_v_allgold) +
+      row(gc.schools_r_debts, (r) => r.debt_deduction === "none" ? gc.schools_v_none : (r.debt_deduction === "cash_only" ? gc.schools_v_cash : gc.schools_v_full)) +
       "</tbody></table>";
-    root.appendChild(collapsible("Schools of thought", [
-      html("p", "Current: <strong>" + rules.label + "</strong> (change on the Market Rates tab).", "sub"),
+    root.appendChild(collapsible(Help.t("guide_s_schools"), [
+      html("p", gc.schools_sub(rules.label), "sub"),
       html("div", schoolsTable, "table-wrap"),
     ]));
 
-    root.appendChild(collapsible("Using the app", [
-      html("ol",
-        "<li><strong>Dashboard</strong> \u2014 rates summary, household totals, members &amp; assets.</li>" +
-        "<li><strong>Analytics</strong> \u2014 wealth/Zakat over time and per-component breakdown.</li>" +
-        "<li><strong>Yearly Review</strong> \u2014 record what each asset was worth in past years.</li>" +
-        "<li><strong>Market Rates</strong> \u2014 school selector, manual/live rates, yearly history.</li>" +
-        "<li><strong>Backup</strong> \u2014 Excel export/report, Google Drive auto-save, and replace from file or Drive.</li>"),
+    root.appendChild(collapsible(Help.t("guide_s_using"), [
+      html("ol", gc.using_ol),
     ]));
 
-    root.appendChild(collapsible("Disclaimer", [
-      html("p", "Educational tool only. Confirm amounts and recipients with a <strong>qualified scholar</strong>. Market rates are indicative.", "sub"),
+    root.appendChild(collapsible(Help.t("guide_s_disclaimer"), [
+      html("p", gc.disclaimer_p, "sub"),
     ]));
   }
 
   function buildFaqSections(root, madhab, rules) {
-    const jewelryAns = rules.jewelry_exempt
+    var lang = Help.getLang();
+    var gc = GUIDE_CONTENT[lang] || GUIDE_CONTENT["en"];
+    var jewelryAns = rules.jewelry_exempt
       ? "Under <strong>" + rules.label + "</strong>, tick <strong>personal adornment</strong> on worn pieces; investment gold stays zakatable."
       : "Under <strong>Hanafi</strong>, <strong>all gold and silver</strong> is generally zakatable, including jewellery.";
-    const debtAns = rules.debt_deduction === "none" ? "debts are <strong>not deducted</strong>."
+    var debtAns = rules.debt_deduction === "none" ? "debts are <strong>not deducted</strong>."
       : rules.debt_deduction === "cash_only" ? "debts reduce <strong>cash only</strong>."
       : "debts reduce <strong>investments</strong> (stocks/business).";
-    const faqs = [
-      ["Is this app a fatwa or legal advice?", "<strong>No.</strong> It is a household calculator with scholar-reviewed defaults. Confirm with a qualified scholar before paying."],
-      ["What is nisab (\u0646\u0635\u0627\u0628)?", "The minimum zakatable wealth before Zakat is due. This app uses gold or silver weights \u00d7 rates per your <strong>" + rules.label + "</strong> setting."],
-      ["Why does the dashboard show zero Zakat due?", "Usually: below <strong>nisab</strong>; still in <strong>hawl</strong>; property is <strong>personal/rental</strong>; jewelry marked <strong>personal adornment</strong> (where exempt); or values not entered yet."],
-      ["Do I use purchase price or today\u2019s value?", "<strong>Today\u2019s market value</strong> for cash, shares, trade property, and metals. Zakat is on what wealth is worth at your Zakat date, not original cost."],
-      ["Do I pay Zakat on the house I live in?", "<strong>No</strong> on the building \u2014 <strong>Property \u2192 Personal residence</strong>. It may show on Analytics for records but is excluded from Zakat."],
-      ["I have two houses \u2014 what do I enter?", "Two <strong>Property</strong> assets: <strong>Personal residence</strong> for your home, <strong>Rental</strong> or <strong>For sale / trade</strong> for the other. Rent received \u2192 <strong>Cash</strong>."],
-      ["Trade property held for years \u2014 which value?", "Use <strong>current market value</strong>, subtype <strong>trade</strong>, hawl from purchase. Bought \u20b91L, now \u20b97L \u2192 enter <strong>\u20b97L</strong>; Zakat \u2248 2.5% of \u20b97L if above nisab \u2014 not 2.5% of \u201cprofit\u201d only."],
-      ["What is hawl and when do I set \u201cHawl start\u201d?", "~<strong>354 lunar days</strong> of owning zakatable wealth. Set <strong>Hawl start</strong> when you received or bought the asset. Wealth still in hawl is excluded until the year completes."],
-      ["When should I calculate and pay Zakat?", "Many families use <strong>Ramadan</strong>. This app\u2019s baseline is the <strong>first Friday of Ramadan</strong> (Umm al-Qura); the header shows today and that baseline."],
-      ["Is Zakat on cash or rent monthly or yearly?", "<strong>Yearly</strong> \u2014 once per lunar year, not monthly. Cash: total you still hold on your Zakat date \u00d7 2.5% if above nisab. Rent: building exempt; rent you keep \u2192 <strong>Cash</strong>."],
-      ["Is gold jewellery zakatable?", jewelryAns],
-      ["What is rikaz and how is it different from savings?", "<strong>Rikaz (\u0631\u0643\u0627\u0632)</strong> is buried treasure or wealth your scholar rules as rikaz \u2014 not salary, FD, or shares. This app: <strong>20% once</strong>, not 2.5% yearly. Use category <strong>Rikaz</strong>."],
-      ["Difference between Zakat, sadaqah, and Zakat al-Fitr?", "<strong>Zakat</strong> \u2014 fixed right on surplus wealth. <strong>Sadaqah</strong> \u2014 voluntary. <strong>Zakat al-Fitr</strong> \u2014 end of Ramadan per person; <strong>not</strong> in this calculator."],
-      ["How does the app handle loans and debts?", "Add <strong>Liabilities</strong>. With <strong>" + rules.label + "</strong>: " + debtAns + " Home loans are not auto-linked to property \u2014 ask your scholar."],
-      ["Do I pay on my salary or on what is still in the bank?", "<strong>What remains in the bank</strong> on your Zakat date. Salary already spent on living costs is not zakatable."],
-      ["What about PF, EPF, mutual funds, and shares?", "<strong>PF / EPF:</strong> category <strong>PF</strong> \u2014 statement balance, as-of date, monthly contributions, projected balance (default 8.25% p.a.). <strong>Funds / shares:</strong> <strong>Stocks</strong> with current total value."],
-      ["I missed Zakat for previous years \u2014 does the app catch up?", "The dashboard shows the <strong>current year</strong>. Use <strong>Yearly Review</strong> to record past-year balances so Analytics reflects them, and calculate any owed back-Zakat with your scholar."],
-      ["How do I record what I already paid?", "Per member \u2192 <strong>+ Payment</strong>: recipient and amount. <strong>Remaining</strong> = due \u2212 paid."],
-      ["Who can receive my Zakat?", "Qur\u2019an 9:60: poor, needy, collectors, hearts reconciled, captives, debtors, in Allah\u2019s cause, stranded travellers. Your scholar can guide eligible recipients."],
-      ["Why does Hanafi nisab differ from other calculators?", "Many calculators use gold nisab only. <strong>Hanafi</strong> often compares <strong>all combined wealth</strong> to <strong>silver nisab</strong> (lower bar). This app follows that when Hanafi is selected."],
-      ["How do I open or back up my data?", "On first visit, pick a backup from your computer or Google Drive. Later, use the <strong>Backup</strong> tab to download Excel, auto-save to <strong>MY_FAMILY/ZAKAAT/zakaat_&lt;mon&gt;_&lt;year&gt;.xlsx</strong>, or replace from another file."],
-      ["Why are Analytics charts empty for cash or property?", "Set <strong>Acquired year</strong> and record balances over time in <strong>Yearly Review</strong>; metals use yearly rates."],
-      ["Can I track the whole family?", "<strong>Yes.</strong> Add multiple <strong>Family members</strong>; Zakat is computed per person and summed on the dashboard."],
+    var answers = gc.faq_a(rules, debtAns, jewelryAns);
+    var questions = [
+      Help.t("guide_faq_q1"), Help.t("guide_faq_q2"), Help.t("guide_faq_q3"),
+      Help.t("guide_faq_q4"), Help.t("guide_faq_q5"), Help.t("guide_faq_q6"),
+      Help.t("guide_faq_q7"), Help.t("guide_faq_q8"), Help.t("guide_faq_q9"),
+      Help.t("guide_faq_q10"), Help.t("guide_faq_q11"), Help.t("guide_faq_q12"),
+      Help.t("guide_faq_q13"), Help.t("guide_faq_q14"), Help.t("guide_faq_q15"),
+      Help.t("guide_faq_q16"), Help.t("guide_faq_q17"), Help.t("guide_faq_q18"),
+      Help.t("guide_faq_q19"), Help.t("guide_faq_q20"), Help.t("guide_faq_q21"),
+      Help.t("guide_faq_q22"), Help.t("guide_faq_q23"),
     ];
-    faqs.forEach((f) => root.appendChild(collapsible(f[0], [html("p", f[1])])));
+    questions.forEach(function(q, i) {
+      if (answers[i] !== undefined) root.appendChild(collapsible(q, [html("p", answers[i])]));
+    });
   }
 
-  // --- Generic field builder ---
+    // --- Generic field builder ---
   function field(label, inputNode, help) {
     const f = el("div", { class: "field" }, [el("label", { text: label }), inputNode]);
     if (help) f.appendChild(el("div", { class: "help", text: help }));
