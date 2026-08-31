@@ -338,29 +338,9 @@
     guide: "About",
   };
 
-  const gaQueue = [];
-
-  function flushGaQueue() {
-    if (!global.SiteAnalytics) return;
-    while (gaQueue.length) {
-      const item = gaQueue.shift();
-      global.SiteAnalytics.trackEvent(item[0], item[1]);
-    }
-  }
-
-  function trackEvent(name, params) {
-    if (global.SiteAnalytics) global.SiteAnalytics.trackEvent(name, params);
-    else gaQueue.push([name, params]);
-  }
-
-  global.addEventListener("site-analytics-ready", flushGaQueue);
-  global.addEventListener("load", flushGaQueue);
-
   function saveFamilyName(raw) {
-    const prev = Store.getFamilyName();
     const next = Store.setFamilyName(raw);
     renderFamilyNameMeta();
-    void prev; // no tracking
     return next;
   }
 

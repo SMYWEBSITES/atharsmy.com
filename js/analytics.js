@@ -8,7 +8,6 @@
   "use strict";
 
   var ID = global.GA_ID || "G-3DFSY795RJ";
-  var FAMILY_NAME = "Athar";
 
   var PATH_ALIASES = {
     "": "/",
