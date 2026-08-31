@@ -4,45 +4,40 @@
  *
  * Strategy:
  *   - App shell files (HTML, CSS, JS, images): cache-first, updated in background
+ *   - SPA navigation: any /zakaat/ path → serve cached index.html (prevents 404
+ *     on OAuth redirects, deep links, or any path GitHub Pages doesn't serve)
  *   - External APIs (metal rates, FX): network-only (stale rates are worse than no rates)
  *   - Fonts (Google Fonts): cache-first with network fallback
  *
  * Bump CACHE_VERSION when deploying breaking changes so old caches are evicted.
  */
 
-const CACHE_VERSION = "zakat-v6";
+const CACHE_VERSION = "zakat-v7";
 const FONT_CACHE    = "zakat-fonts-v1";
 
-// App shell — everything the app needs to boot offline
+// App shell — everything the app needs to boot offline.
+// Paths must match what index.html actually loads (no version query strings here;
+// the SW caches versioned URLs via stale-while-revalidate on first load).
 const APP_SHELL = [
   "/zakaat/",
   "/zakaat/index.html",
-  "/zakaat/styles.css",
   "/zakaat/manifest.json",
-  "/zakaat/app/zakat.js",
-  "/zakaat/app/storage.js",
-  "/zakaat/app/rates.js",
-  "/zakaat/app/rates_history.js",
-  "/zakaat/app/help.js",
-  "/zakaat/app/ui.js",
-  "/zakaat/app/excel.js",
-  "/zakaat/app/gdrive.js",
   "/zakaat/assets/logo.svg",
   "/zakaat/assets/icon-192.png",
   "/zakaat/assets/icon-512.png",
   "/zakaat/assets/kaaba-hero.jpg",
-  "/js/analytics.js",
-  "/js/gtag-bootstrap.js",
 ];
 
-// External origins that must always go to the network (live data)
+// External origins that must always go to the network (live data or auth)
 const NETWORK_ONLY_ORIGINS = [
   "api.gold-api.com",
   "api.frankfurter.dev",
   "open.er-api.com",
+  "freegoldapi.com",
   "ipapi.co",
   "ipwho.is",
   "accounts.google.com",
+  "oauth2.googleapis.com",
   "www.googleapis.com",
   "www.googletagmanager.com",
   "www.google-analytics.com",
@@ -86,7 +81,7 @@ self.addEventListener("fetch", (event) => {
   // Only handle GET requests
   if (req.method !== "GET") return;
 
-  // Network-only: live API calls
+  // Network-only: live API calls and auth endpoints
   if (NETWORK_ONLY_ORIGINS.includes(url.hostname)) {
     event.respondWith(fetch(req));
     return;
@@ -108,7 +103,22 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // App shell: cache-first, stale-while-revalidate
+  // SPA navigation: serve the app shell for any top-level navigation within /zakaat/.
+  // This prevents 404s from GitHub Pages when the browser navigates to any path
+  // that doesn't correspond to a real file — including OAuth redirect paths,
+  // bookmarked deep links, or GIS internal redirect URIs (e.g. /zakaat/gsi_transform).
+  if (req.mode === "navigate") {
+    event.respondWith(
+      caches.open(CACHE_VERSION).then((cache) =>
+        cache.match("/zakaat/index.html").then((cached) =>
+          cached || fetch("/zakaat/index.html")
+        )
+      )
+    );
+    return;
+  }
+
+  // App shell resources: cache-first, stale-while-revalidate
   event.respondWith(
     caches.open(CACHE_VERSION).then((cache) =>
       cache.match(req).then((cached) => {
