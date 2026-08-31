@@ -1,7 +1,7 @@
 /*
  * Shared GA4 helpers for atharsmy.com (Profile Site + Zakat Calculator).
- * Privacy: profile site sends only the public family name "Athar"; the Zakat app
- * may send a user-entered household family name when they save it.
+ * Zakat app: only country/city (via GA4's automatic geo detection) — no names,
+ * no financial data, no personal details of any kind are sent to GA4.
  * Requires gtag bootstrap in each HTML page (async gtag.js + dataLayer).
  */
 (function (global) {
@@ -68,11 +68,6 @@
     return "Profile Site";
   }
 
-  function sanitizeFamilyName(value) {
-    if (!value) return "";
-    return String(value).trim().replace(/\s+/g, " ").slice(0, 64);
-  }
-
   function outboundDomain(url) {
     try {
       return new URL(url).hostname.replace(/^www\./, "");
@@ -90,15 +85,6 @@
       if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
       if (key === "link_text" || key === "file" || key === "link_url" || key === "send_to") continue;
       clean[key] = src[key];
-    }
-
-    if (name === "family_name_set" || name === "family_name_active") {
-      var entered = sanitizeFamilyName(src.family_name);
-      if (entered) clean.family_name = entered;
-    }
-
-    if (!isZakatApp() && (name === "family_name_view" || (name === "section_view" && src.section_id === "family-name"))) {
-      clean.family_name = FAMILY_NAME;
     }
 
     if (name === "outbound_click" && src.link_url) {
@@ -175,15 +161,11 @@
         trackEvent("nav_click", { destination: "home" });
       } else if (href.charAt(0) === "#") {
         trackEvent("section_nav", { section_id: href.slice(1) });
-        if (href === "#family-name") {
-          trackEvent("family_name_nav", { destination: "family_name" });
-        }
       }
     });
 
     if ("IntersectionObserver" in global) {
       var seenSections = {};
-      var seenFamilyName = false;
       var observer = new IntersectionObserver(
         function (entries) {
           entries.forEach(function (entry) {
@@ -196,10 +178,6 @@
               section_id: id,
               section_name: el.getAttribute("data-analytics-name") || id,
             });
-            if (id === "family-name" && !seenFamilyName) {
-              seenFamilyName = true;
-              trackEvent("family_name_view", { section_id: id, section_name: "Family Name" });
-            }
             observer.unobserve(el);
           });
         },

@@ -14,10 +14,6 @@
   let baseline = null;
   let yearlySelected = null; // selected calendar year on the Yearly Review tab
 
-  // dashboard_view event deduplication — only fire when financial values actually
-  // change, debounced so rapid refreshAll() calls (asset edits etc.) collapse.
-  let _dashviewTimer = null;
-  let _lastDashviewKey = null;
 
   // --- DOM helpers ---
   function el(tag, attrs, children) {
@@ -176,7 +172,6 @@
     if (opts.button) markDriveConnectButton(opts.button, opts.busyLabel || "Connecting\u2026");
     return Drive.connect({ interactive: true })
       .then((res) => {
-        trackEvent("drive_connect", { method: "google" });
         return typeof opts.onSuccess === "function" ? opts.onSuccess(res) : res;
       })
       .catch((e) => {
@@ -214,7 +209,6 @@
     if (!file) { toast("Choose a backup file first", "err"); return; }
     Excel.importBackupFromFile(file)
       .then((counts) => {
-        trackEvent("data_import", { source: "excel", member_count: counts.members, asset_count: counts.assets });
         closeModal();
         if (typeof done === "function") done();
         refreshAll();
@@ -300,7 +294,6 @@
           () => {
             Drive.restore(fileName)
               .then((res) => {
-                trackEvent("data_import", { source: "drive_replace", member_count: res.counts.members });
                 closeModal();
                 refreshAll();
                 toast("Replaced with " + res.counts.members + " member(s) from " + res.fileName, "ok");
@@ -363,25 +356,11 @@
   global.addEventListener("site-analytics-ready", flushGaQueue);
   global.addEventListener("load", flushGaQueue);
 
-  var trackedFamilyNameActive = false;
-
-  function maybeTrackFamilyNameActive() {
-    const name = Store.getFamilyName();
-    if (!name || trackedFamilyNameActive) return;
-    trackedFamilyNameActive = true;
-    trackEvent("family_name_active", { family_name: name });
-  }
-
-  function saveFamilyName(raw, source) {
+  function saveFamilyName(raw) {
     const prev = Store.getFamilyName();
     const next = Store.setFamilyName(raw);
     renderFamilyNameMeta();
-    if (next && next !== prev) {
-      trackEvent("family_name_set", { family_name: next, source: source || "dashboard" });
-      trackedFamilyNameActive = true;
-    } else if (next) {
-      maybeTrackFamilyNameActive();
-    }
+    void prev; // no tracking
     return next;
   }
 
@@ -697,36 +676,6 @@
 
     // Track dashboard view with financial summary — debounced and deduplicated
     // so rapid refreshAll() calls (every asset/member save) don't multiply the
-    // values in GA4. The event only fires when the numbers actually change.
-    const _dwKey = [
-      Store.getFamilyName(), Store.getCurrency(), members.length,
-      Math.round(totalWealth), Math.round(totalZakatable), Math.round(household.total_zakat_inr),
-    ].join("|");
-    if (_dwKey !== _lastDashviewKey) {
-      clearTimeout(_dashviewTimer);
-      _dashviewTimer = setTimeout(() => {
-        _lastDashviewKey = _dwKey;
-        // Store financial snapshot as user properties so GA4 always reflects
-        // the LATEST value per user (not a running sum across sessions).
-        if (typeof global.gtag === "function") {
-          global.gtag("set", "user_properties", {
-            total_wealth:     Math.round(totalWealth),
-            zakatable_amount: Math.round(totalZakatable),
-            zakat_due:        Math.round(household.total_zakat_inr),
-            currency:         Store.getCurrency() || "INR",
-          });
-        }
-        trackEvent("dashboard_view", {
-          family_name:      Store.getFamilyName() || "",
-          currency:         Store.getCurrency()   || "INR",
-          member_count:     members.length,
-          total_wealth:     Math.round(totalWealth),
-          zakatable_amount: Math.round(totalZakatable),
-          zakat_due:        Math.round(household.total_zakat_inr),
-        });
-      }, 2000);
-    }
-
     // Baseline projections and the per-member table live on Analytics;
     // the dashboard stays focused on totals + family & asset management.
     buildFamily(panel);
@@ -2345,7 +2294,6 @@
       driveOpenBtn.disabled = true;
       Drive.restore(fileName)
         .then((res) => {
-          trackEvent("data_import", { source: "drive", member_count: res.counts.members });
           closeModal();
           if (typeof onDone === "function") onDone();
           refreshAll();
@@ -2408,7 +2356,6 @@
           onclick: () => {
             const saved = saveFamilyName(familyInput.value, "welcome");
             if (!saved) { toast("Enter your family name to continue", "err"); familyInput.focus(); return; }
-            trackEvent("welcome_start", { choice: "fresh" });
             closeModal();
             if (typeof onDone === "function") onDone();
           },
@@ -2419,7 +2366,6 @@
     choices.querySelectorAll(".welcome-choice").forEach((card) => {
       card.addEventListener("click", () => {
         selected = card.dataset.choice;
-        trackEvent("welcome_choice", { choice: selected });
         choices.querySelectorAll(".welcome-choice").forEach((c) => {
           c.classList.toggle("selected", c === card);
         });
@@ -2488,7 +2434,6 @@
             renderPrefLang();
           }
           detectNote.textContent = "Detected from your location: " + where + " → " + found + ". Change it above if that's wrong.";
-          trackEvent("welcome_geo_detect", { country: loc.country || "", currency: found });
         })
         .catch(() => { detectNote.textContent = "Couldn't check your location — pick your currency above."; });
     } else {
@@ -2530,10 +2475,10 @@
     savePanel.appendChild(el("h2", { text: Help.t("bkp_title") }));
     savePanel.appendChild(el("div", { class: "backup-btn-stack" }, [
       aBtn("", "\ud83d\udce5", Help.t("bkp_download_device"), () => {
-        Excel.exportBackup().then(() => { trackEvent("backup_export", { type: "full" }); toast("Backup downloaded", "ok"); }).catch((e) => toast("Export failed: " + e.message, "err"));
+        Excel.exportBackup().then(() => { toast("Backup downloaded", "ok"); }).catch((e) => toast("Export failed: " + e.message, "err"));
       }),
       aBtn("secondary", "\ud83d\udcc4", Help.t("bkp_download_report"), () => {
-        Excel.exportReport().then(() => { trackEvent("backup_export", { type: "report" }); toast("Report downloaded", "ok"); }).catch((e) => toast("Export failed: " + e.message, "err"));
+        Excel.exportReport().then(() => { toast("Report downloaded", "ok"); }).catch((e) => toast("Export failed: " + e.message, "err"));
       }),
     ]));
     savePanel.appendChild(renderDriveSection());
@@ -2651,7 +2596,7 @@
     );
     uploadBtn.addEventListener("click", () =>
       busy(uploadBtn, "Uploading\u2026", () =>
-        Drive.backup().then((res) => { trackEvent("backup_export", { type: "drive" }); toast("Backed up to " + res.path, "ok"); })
+        Drive.backup().then((res) => { toast("Backed up to " + res.path, "ok"); })
       )
     );
     disconnectBtn.addEventListener("click", () => { Drive.disconnect(); toast("Disconnected"); setStatus(); refreshButtons(); });
