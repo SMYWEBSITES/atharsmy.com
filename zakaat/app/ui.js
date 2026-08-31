@@ -1403,7 +1403,12 @@
           const val = ZK.effectiveValuationInr(a, rates, baseline);
           const detail = assetDetail(a);
           const thumb = a.image ? el("img", { class: "asset-thumb", src: a.image, alt: "" }) : null;
-          const descCell = el("td", null, [thumb, document.createTextNode((thumb ? " " : "") + (a.description || a.category))]);
+
+          // Description cell — tap anywhere to open full edit modal
+          const descCell = el("td", { class: "desc-tap", title: "Tap to edit" },
+            [thumb, document.createTextNode((thumb ? " " : "") + (a.description || a.category))]);
+          descCell.addEventListener("click", () => assetForm(m.id, a));
+
           // Hawl badge — only for categories that require hawl (not Agriculture / Rikaz)
           const needsHawl = a.category !== "Agriculture" && a.category !== "Rikaz";
           let hawlBadge = null;
@@ -1419,18 +1424,69 @@
           const detailCell = el("td", { class: "muted" });
           if (detail) detailCell.appendChild(document.createTextNode(detail));
           if (hawlBadge) detailCell.appendChild(hawlBadge);
+
+          // Value cell — tap to edit inline.
+          // For weight-based metals (Gold/Silver/Platinum) and PF, the displayed
+          // value is computed rather than stored directly, so tap opens the full
+          // modal instead (where the real input — grams / balance — lives).
+          const isComputedVal = (
+            ((a.category === "Gold" || a.category === "Silver" || a.category === "Platinum") && ZK.num(a.weight_grams) > 0) ||
+            (a.category === "Diamond" && ZK.num(a.gem_carats) > 0) ||
+            a.category === "PF"
+          );
+          const valCell = el("td", { class: "num" });
+          const valBtn = el("button", {
+            class: "val-tap",
+            text: ZK.fmtINR(val),
+            title: isComputedVal ? "Tap to edit" : "Tap to edit value",
+          });
+          valBtn.addEventListener("click", () => {
+            if (isComputedVal) { assetForm(m.id, a); return; }
+            // Inline edit: replace button with input + Save/Cancel
+            clear(valCell);
+            const rawVal = ZK.num(a.valuation_inr);
+            const inp = el("input", {
+              type: "text",
+              inputmode: "decimal",
+              class: "inline-val-inp",
+              value: rawVal > 0 ? String(rawVal) : "",
+              placeholder: "0",
+            });
+            const saveBtn = el("button", { class: "btn sm", text: "Save" });
+            const cancelBtn = el("button", { class: "btn-ghost sm", text: "Cancel" });
+            function doSave() {
+              const newVal = ZK.num(inp.value);
+              Store.updateAsset(m.id, a.id, { valuation_inr: newVal });
+              if (ZK.TRACKED_CATEGORIES.has(a.category)) {
+                const cy = ZK.todayUTC().getUTCFullYear();
+                const saved = Store.getAsset(m.id, a.id);
+                if (saved) Store.setSnapshot(m.id, a.id, cy, ZK.snapshotState(saved, cy));
+              }
+              refreshAll(); toast("Saved", "ok");
+            }
+            function doCancel() { refreshAll(); }
+            inp.addEventListener("keydown", (e) => {
+              if (e.key === "Enter") { e.preventDefault(); doSave(); }
+              if (e.key === "Escape") doCancel();
+            });
+            saveBtn.addEventListener("click", doSave);
+            cancelBtn.addEventListener("click", doCancel);
+            valCell.appendChild(el("div", { class: "inline-edit-wrap" }, [
+              inp,
+              el("div", { class: "inline-edit-btns" }, [cancelBtn, saveBtn]),
+            ]));
+            inp.focus(); inp.select();
+          });
+          valCell.appendChild(valBtn);
+
           return el("tr", null, [
             el("td", null, el("span", { class: "pill gray", text: (CATEGORY_ICONS[a.category] ? CATEGORY_ICONS[a.category] + " " : "") + a.category })),
             descCell,
             detailCell,
-            el("td", { class: "num", text: ZK.fmtINR(val) }),
-            el("td", { class: "num" }, el("div", { class: "table-actions" }, [
-              el("button", { class: "btn-ghost sm", text: "Edit", onclick: () => assetForm(m.id, a) }),
-              el("button", { class: "btn-ghost sm danger-text", text: "Delete", onclick: () => { Store.deleteAsset(m.id, a.id); refreshAll(); toast("Asset deleted"); } }),
-            ])),
+            valCell,
           ]);
         });
-        const thead = el("thead", null, el("tr", null, [th("Category"), th("Description"), th("Details"), th("Value", true), th("", true)]));
+        const thead = el("thead", null, el("tr", null, [th("Category"), th("Description"), th("Details"), th("Value", true)]));
         body.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [thead, el("tbody", null, rows)]))));
       }
 
@@ -1439,15 +1495,48 @@
       if (!(m.zakat_payments || []).length) {
         body.appendChild(el("div", { class: "muted", style: "font-size:13px", text: "No payments recorded." }));
       } else {
-        const rows = m.zakat_payments.map((p) => el("tr", null, [
-          el("td", { text: p.given_to }),
-          el("td", { class: "num", text: ZK.fmtINR(p.amount_inr) }),
-          el("td", { class: "num" }, el("div", { class: "table-actions" }, [
-            el("button", { class: "btn-ghost sm", text: "Edit", onclick: () => paymentForm(m.id, p) }),
-            el("button", { class: "btn-ghost sm danger-text", text: "Delete", onclick: () => { Store.deletePayment(m.id, p.id); refreshAll(); toast("Payment deleted"); } }),
-          ])),
-        ]));
-        const thead = el("thead", null, el("tr", null, [th("Given to"), th("Amount", true), th("", true)]));
+        const rows = m.zakat_payments.map((p) => {
+          // Given-to cell — tap to open full edit modal
+          const givenCell = el("td", { class: "desc-tap", title: "Tap to edit", text: p.given_to });
+          givenCell.addEventListener("click", () => paymentForm(m.id, p));
+          // Amount cell — tap to edit inline
+          const amtCell = el("td", { class: "num" });
+          const amtBtn = el("button", { class: "val-tap", text: ZK.fmtINR(p.amount_inr), title: "Tap to edit amount" });
+          amtBtn.addEventListener("click", () => {
+            clear(amtCell);
+            const rawAmt = ZK.num(p.amount_inr);
+            const inp = el("input", {
+              type: "text",
+              inputmode: "decimal",
+              class: "inline-val-inp",
+              value: rawAmt > 0 ? String(rawAmt) : "",
+              placeholder: "0",
+            });
+            const saveBtn = el("button", { class: "btn sm", text: "Save" });
+            const cancelBtn = el("button", { class: "btn-ghost sm", text: "Cancel" });
+            function doSave() {
+              const newAmt = ZK.num(inp.value);
+              if (newAmt <= 0) { toast("Enter a valid amount", "err"); return; }
+              Store.updatePayment(m.id, p.id, p.given_to, inp.value);
+              refreshAll(); toast("Saved", "ok");
+            }
+            function doCancel() { refreshAll(); }
+            inp.addEventListener("keydown", (e) => {
+              if (e.key === "Enter") { e.preventDefault(); doSave(); }
+              if (e.key === "Escape") doCancel();
+            });
+            saveBtn.addEventListener("click", doSave);
+            cancelBtn.addEventListener("click", doCancel);
+            amtCell.appendChild(el("div", { class: "inline-edit-wrap" }, [
+              inp,
+              el("div", { class: "inline-edit-btns" }, [cancelBtn, saveBtn]),
+            ]));
+            inp.focus(); inp.select();
+          });
+          amtCell.appendChild(amtBtn);
+          return el("tr", null, [givenCell, amtCell]);
+        });
+        const thead = el("thead", null, el("tr", null, [th("Given to"), th("Amount", true)]));
         body.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [thead, el("tbody", null, rows)]))));
       }
 
@@ -1803,8 +1892,17 @@
     } });
 
     openModal(existing ? "Edit asset" : "Add asset", body, [
+      existing ? el("button", { class: "btn-ghost danger-text", text: "Delete", onclick: () => {
+        closeModal();
+        confirmDialog(
+          "Delete asset",
+          "Delete " + (existing.description || existing.category) + "?",
+          () => { Store.deleteAsset(memberId, existing.id); refreshAll(); toast("Asset deleted"); },
+          "Delete", true
+        );
+      } }) : null,
       el("button", { class: "btn secondary", text: "Cancel", onclick: closeModal }), save,
-    ]);
+    ].filter(Boolean));
   }
 
   // Show/hide form field blocks (class-based so grid/layout cannot override).
@@ -1849,8 +1947,13 @@
       closeModal(); refreshAll(); toast(existing ? "Payment updated" : "Payment added", "ok");
     } });
     openModal(existing ? "Edit Zakat payment" : "Record Zakat payment", body, [
+      existing ? el("button", { class: "btn-ghost danger-text", text: "Delete", onclick: () => {
+        closeModal();
+        Store.deletePayment(memberId, existing.id);
+        refreshAll(); toast("Payment deleted");
+      } }) : null,
       el("button", { class: "btn secondary", text: "Cancel", onclick: closeModal }), save,
-    ]);
+    ].filter(Boolean));
   }
 
   // --- Currency / language / school choosers (shared by welcome + Rates tab) ---
