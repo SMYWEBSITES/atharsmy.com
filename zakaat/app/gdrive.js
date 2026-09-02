@@ -59,6 +59,7 @@
   const FILES_API = "https://www.googleapis.com/drive/v3/files";
   const UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
   const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  const STATE_JSON_FILE = "zakaat_state.json"; // small JSON snapshot used for auto-merge
 
   const FOLDER_FAMILY = "MY_FAMILY";
   const FOLDER_ZAKAAT = "ZAKAAT";
@@ -859,6 +860,34 @@
     }).then((r) => r.json());
   }
 
+  // Upload a JSON text file to Drive (create or update by existingId).
+  // Uses the same multipart upload API as uploadXlsx.
+  function uploadJson(folderId, fileName, jsonText, existingId) {
+    var enc = new TextEncoder();
+    var boundary = "zk_" + Math.random().toString(36).slice(2);
+    var bytes = enc.encode(jsonText);
+    var metadata = existingId ? { name: fileName } : { name: fileName, parents: [folderId] };
+    var method = existingId ? "PATCH" : "POST";
+    var url = UPLOAD_API + (existingId ? "/" + existingId : "") + "?uploadType=multipart&fields=id,name,modifiedTime";
+    var metaPart = enc.encode(
+      "--" + boundary + "\r\n" +
+      "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+      JSON.stringify(metadata) + "\r\n" +
+      "--" + boundary + "\r\n" +
+      "Content-Type: application/json\r\n\r\n"
+    );
+    var endPart = enc.encode("\r\n--" + boundary + "--");
+    var body = new Uint8Array(metaPart.length + bytes.length + endPart.length);
+    body.set(metaPart, 0);
+    body.set(bytes, metaPart.length);
+    body.set(endPart, metaPart.length + bytes.length);
+    return driveFetch(url, {
+      method: method,
+      headers: authHeaders({ "Content-Type": "multipart/related; boundary=" + boundary }),
+      body: body,
+    }).then(function (r) { return r.json(); });
+  }
+
   function downloadFile(fileId) {
     const url = FILES_API + "/" + fileId + "?alt=media";
     return driveFetch(url, { headers: authHeaders() }).then((r) => r.arrayBuffer());
@@ -915,84 +944,95 @@
     );
   }
 
-  // ── Conflict detection ───────────────────────────────────────────────────
-  // When multiple sessions (tabs / devices) are open they can each auto-save
-  // and silently overwrite each other. We guard against this by recording the
-  // last *known* Drive modifiedTime after every upload/restore and comparing it
-  // against the current Drive file before the next upload.
+  // ── Auto-merge (multi-session conflict resolution) ────────────────────────
+  // Instead of blocking on conflict, we silently merge the remote state with
+  // the local state using field-level last-write-wins (implemented in storage.js).
+  // The JSON state file is the merge source; the Excel file is a human-readable archive.
   //
-  // The check relies on the modifiedTime returned by the Google Drive API
-  // (returned with every upload response and with every file-listing call).
-  // A 30-second skew buffer avoids false positives from tiny clock differences.
+  // CONFLICT_SKEW_MS: ignore differences smaller than this (clock skew / network lag).
   const CONFLICT_SKEW_MS = 30000;
 
-  let conflictCb = null;
-  function setConflictCallback(cb) { conflictCb = cb; }
-  function notifyConflict(fileName, modifiedTime) {
-    if (conflictCb) conflictCb(fileName, modifiedTime);
-  }
-
-  function backup(date, opts) {
+  function backup(date) {
     const Excel = global.ZKExcel;
+    const Store = global.ZKStore;
     if (!Excel || !Excel.buildBackupBuffer) {
       return Promise.reject(new Error("Excel backup module not loaded."));
     }
-    const force = !!(opts && opts.force);
+
+    var didMerge = false;
+    var stateFileId = null; // Drive file ID for zakaat_state.json (found during conflict check)
 
     return ensureToken()
-      .then(() => prepareCurrentMonth(date))
-      .then((ctx) => {
-        // Conflict guard: another session saved to Drive since our last upload.
-        // prepareCurrentMonth already fetched ctx.existing with its modifiedTime,
-        // so this check is free (no extra API call).
-        if (!force && ctx.existing && ctx.existing.modifiedTime) {
-          const cfg = loadCfg();
-          const knownModified = cfg.last_drive_modified;
-          if (knownModified) {
-            const driveMs = new Date(ctx.existing.modifiedTime).getTime();
-            const knownMs = new Date(knownModified).getTime();
+      .then(function () { return ensureZakaatFolder(); })
+      .then(function (folderId) {
+        // Step 1: Check the JSON state file for changes from another session.
+        // findFileInFolder is lightweight (metadata only, not a download).
+        return findFileInFolder(folderId, STATE_JSON_FILE).then(function (stateFile) {
+          stateFileId = stateFile ? stateFile.id : null;
+          var cfg = loadCfg();
+          var lastKnown = cfg.last_state_modified;
+          if (stateFile && stateFile.modifiedTime && lastKnown) {
+            var driveMs = new Date(stateFile.modifiedTime).getTime();
+            var knownMs = new Date(lastKnown).getTime();
             if (driveMs > knownMs + CONFLICT_SKEW_MS) {
-              const err = new Error("drive_conflict");
-              err.driveConflict = true;
-              err.modifiedTime = ctx.existing.modifiedTime;
-              err.fileName = ctx.fileName;
-              throw err;
+              // Another session saved — download, merge, apply silently.
+              console.log("[GDrive] Remote state is newer — auto-merging.");
+              return downloadFile(stateFile.id).then(function (buf) {
+                var text = new TextDecoder().decode(buf);
+                var remote = JSON.parse(text);
+                if (Store && Store.mergeWith && Store.applyMerged) {
+                  var merged = Store.mergeWith(remote);
+                  Store.applyMerged(merged);
+                  didMerge = true;
+                }
+              });
             }
           }
-        }
-        return Excel.buildBackupBuffer().then((buf) => {
-          const bytes = new Uint8Array(buf);
-          return uploadXlsx(ctx.folderId, ctx.fileName, bytes, ctx.existing && ctx.existing.id).then((res) => ({
-            res: res,
-            ctx: ctx,
-          }));
+        }).then(function () { return folderId; });
+      })
+      .then(function (folderId) {
+        // Step 2: Excel monthly backup (existing rollover logic).
+        return prepareCurrentMonth(date).then(function (ctx) { return { folderId: folderId, ctx: ctx }; });
+      })
+      .then(function (pack) {
+        var folderId = pack.folderId, ctx = pack.ctx;
+        // Step 3: Build Excel from (possibly merged) state, then upload JSON + Excel.
+        return Excel.buildBackupBuffer().then(function (buf) {
+          var xlsxBytes = new Uint8Array(buf);
+          var stateJson = JSON.stringify(Store ? Store.exportState() : {});
+          return Promise.all([
+            uploadXlsx(ctx.folderId || folderId, ctx.fileName, xlsxBytes, ctx.existing && ctx.existing.id),
+            uploadJson(folderId, STATE_JSON_FILE, stateJson, stateFileId),
+          ]).then(function (results) {
+            return { xlsxRes: results[0], jsonRes: results[1], ctx: ctx };
+          });
         });
       })
-      .then(({ res, ctx }) => {
-        const when = new Date().toISOString();
+      .then(function (pack) {
+        var xlsxRes = pack.xlsxRes, jsonRes = pack.jsonRes, ctx = pack.ctx;
+        var when = new Date().toISOString();
         saveCfg({
           last_sync: when,
           last_file_name: ctx.fileName,
-          last_file_id: res.id || null,
-          last_drive_modified: res.modifiedTime || null, // track Drive's own timestamp
+          last_file_id: xlsxRes.id || null,
+          last_drive_modified: xlsxRes.modifiedTime || null,
+          last_state_modified: jsonRes.modifiedTime || null,
           active_month: monthKey(date),
         });
         return {
-          id: res.id,
+          id: xlsxRes.id,
           fileName: ctx.fileName,
           savedAt: when,
           path: folderPathLabel() + ctx.fileName,
           rolled: ctx.rolled,
           source: ctx.source || null,
+          merged: didMerge,
         };
       });
   }
 
-  // Force-save regardless of conflict — called when user explicitly chooses
-  // to overwrite Drive with their current local data.
-  function backupForce(date) {
-    return backup(date, { force: true });
-  }
+  // backupForce is kept for any manual "save anyway" actions in the UI.
+  function backupForce(date) { return backup(date); }
 
   function maybeSyncMonthRollover() {
     if (!getAutoSync() || !isConfigured() || !getDriveEnabled() || !isConnected()) {
@@ -1035,12 +1075,13 @@
         }))
       )
       .then((result) => {
-        // Record the Drive file's own timestamp so the next conflict check
-        // knows which version we're "in sync with".
         saveCfg({
           last_sync: new Date().toISOString(),
           last_file_name: result.fileName,
           last_drive_modified: result.modifiedTime || null,
+          // After a manual restore from Excel, reset the JSON baseline so the next
+          // auto-save uploads a fresh JSON state rather than treating it as a conflict.
+          last_state_modified: null,
         });
         return result;
       });
@@ -1056,18 +1097,15 @@
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       backup()
         .then(function (res) {
-          var msg = res.rolled
-            ? "New month backup created: " + res.path + (res.source ? " (from " + res.source + ")" : "")
-            : "Auto-saved to Drive: " + res.path;
+          var msg = res.merged
+            ? "Merged changes from another session · saved: " + res.path
+            : res.rolled
+              ? "New month backup created: " + res.path + (res.source ? " (from " + res.source + ")" : "")
+              : "Auto-saved to Drive: " + res.path;
           notify("ok", msg);
         })
         .catch(function (e) {
-          if (e.driveConflict) {
-            // Another session saved to Drive since our last sync — let the UI handle it.
-            notifyConflict(e.fileName, e.modifiedTime);
-          } else {
-            notify("err", "Auto-save failed: " + (e.message || e));
-          }
+          notify("err", "Auto-save failed: " + (e.message || e));
         });
     }, 2000);
   }
@@ -1132,7 +1170,6 @@
     maybeSyncMonthRollover,
     prepareCurrentMonth,
     setStatusCallback,
-    setConflictCallback,
     refreshAccessToken,
     SCOPE,
     FOLDER_FAMILY,

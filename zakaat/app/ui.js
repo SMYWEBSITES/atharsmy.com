@@ -3213,32 +3213,9 @@
     ZK.setDisplayCurrency(Store.getCurrency());
     if (Drive) {
       Drive.setStatusCallback((kind, msg) => toast(msg, kind));
-      Drive.setConflictCallback((fileName, modifiedTime) => {
-        // Another session wrote to Drive while this tab was active/background.
-        // Show a persistent modal so the user can decide what to do.
-        const minsAgo = Math.max(0, Math.round((Date.now() - new Date(modifiedTime).getTime()) / 60000));
-        const timeStr = minsAgo <= 1 ? "just now" : minsAgo + " minute" + (minsAgo === 1 ? "" : "s") + " ago";
-        const body = el("div", null, [
-          el("p", { class: "muted", text: "Drive was updated from another session or device (" + timeStr + "). Your auto-save was paused to avoid overwriting it." }),
-          el("p", { class: "muted", text: "File: " + fileName }),
-          el("ul", { class: "muted", style: "margin-top:8px;padding-left:18px;font-size:13px" }, [
-            el("li", { html: "<strong>Restore from Drive</strong> — load the newer version from Drive into this session. Your unsaved local changes will be replaced." }),
-            el("li", { html: "<strong>Overwrite Drive</strong> — discard the other session's save and write this session's data to Drive." }),
-          ]),
-        ]);
-        const restoreBtn = el("button", { class: "btn", text: "↙ Restore from Drive", onclick: () => {
-          closeModal();
-          Drive.restore().then(() => { refreshAll(); toast("Restored from Drive", "ok"); }).catch((e) => toast("Restore failed: " + e.message, "err"));
-        } });
-        const overwriteBtn = el("button", { class: "btn secondary", text: "Overwrite Drive", onclick: () => {
-          closeModal();
-          Drive.backupForce().then(() => toast("Saved to Drive", "ok")).catch((e) => toast("Save failed: " + e.message, "err"));
-        } });
-        openModal("⚠ Drive Conflict", body, [
-          el("button", { class: "btn-ghost", text: "Decide later", onclick: closeModal }),
-          overwriteBtn,
-          restoreBtn,
-        ]);
+      // When a background auto-merge updates local state, refresh the UI.
+      document.addEventListener("zk:drive-merge", () => {
+        refreshAll();
       });
       Store.onSave(() => Drive.scheduleAutoBackup());
       setupDriveConnectResume();
