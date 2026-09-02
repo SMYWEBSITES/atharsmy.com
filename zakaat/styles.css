@@ -100,6 +100,8 @@ h1, h2, h3 { margin: 0; }
   color: var(--white);
   box-shadow: 0 8px 32px rgba(10, 26, 26, 0.25);
   position: relative;
+  /* Push content below iOS notch / Dynamic Island / status bar */
+  padding-top: env(safe-area-inset-top);
 }
 
 .app-header::after {
@@ -353,6 +355,37 @@ tr:last-child td { border-bottom: none; }
 .desc-tap { cursor: pointer; }
 .desc-tap:hover { text-decoration: underline; }
 .desc-tap:active { opacity: 0.7; }
+
+/* 2-column asset table — left cell stacks category pill + desc + detail + hawl */
+.asset-info-cell {
+  cursor: pointer;
+  vertical-align: top;
+  max-width: 0; /* allow cell to shrink; table-layout:auto handles the rest */
+}
+.asset-info-cell:hover { background: rgba(0, 0, 0, 0.03); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .asset-info-cell:hover { background: rgba(255, 255, 255, 0.05); }
+}
+:root[data-theme="dark"] .asset-info-cell:hover { background: rgba(255, 255, 255, 0.05); }
+.asset-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.asset-cat-pill { flex-shrink: 0; font-size: 11px; }
+.asset-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--slate-500, #64748b);
+}
+.asset-sub .hawl-badge { font-size: 11px; padding: 1px 6px; }
 
 .member-actions {
   display: flex;

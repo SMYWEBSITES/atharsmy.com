@@ -132,19 +132,20 @@
   function members() { return state.members; }
   function getMember(id) { return state.members.find((m) => m.id === id) || null; }
 
-  function addMember(name, relationship) {
+  function addMember(name, relationship, dob) {
     const id = ++state.seq.member;
-    const m = { id, name: String(name || "").trim(), relationship: String(relationship || "Family").trim(), assets: [], zakat_payments: [] };
+    const m = { id, name: String(name || "").trim(), relationship: String(relationship || "Family").trim(), dob: dob || null, assets: [], zakat_payments: [] };
     state.members.push(m);
     save();
     return m;
   }
 
-  function updateMember(id, name, relationship) {
+  function updateMember(id, name, relationship, dob) {
     const m = getMember(id);
     if (!m) return null;
     m.name = String(name || "").trim();
     m.relationship = String(relationship || "Family").trim();
+    m.dob = dob !== undefined ? (dob || null) : (m.dob || null);
     save();
     return m;
   }

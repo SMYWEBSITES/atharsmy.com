@@ -1355,7 +1355,7 @@
         el("span", { class: "member-chevron", text: "\u25BE" }),
         el("div", null, [
           el("div", { class: "name", text: m.name }),
-          el("div", { class: "muted", style: "font-size:12px", text: m.relationship + " \u00b7 Wealth: " + ZK.fmtINR(summary.total_wealth_inr) + " \u00b7 Zakat: " + ZK.fmtINR(summary.zakat_due_inr) }),
+          el("div", { class: "muted", style: "font-size:12px", text: m.relationship + (isMinorMember(m) ? " \u00b7 Minor" : "") + " \u00b7 Wealth: " + ZK.fmtINR(summary.total_wealth_inr) + " \u00b7 Zakat: " + ZK.fmtINR(summary.zakat_due_inr) }),
         ]),
       ]);
       headToggle.addEventListener("click", () => {
@@ -1404,11 +1404,6 @@
           const detail = assetDetail(a);
           const thumb = a.image ? el("img", { class: "asset-thumb", src: a.image, alt: "" }) : null;
 
-          // Description cell — tap anywhere to open full edit modal
-          const descCell = el("td", { class: "desc-tap", title: "Tap to edit" },
-            [thumb, document.createTextNode((thumb ? " " : "") + (a.description || a.category))]);
-          descCell.addEventListener("click", () => assetForm(m.id, a));
-
           // Hawl badge — only for categories that require hawl (not Agriculture / Rikaz)
           const needsHawl = a.category !== "Agriculture" && a.category !== "Rikaz";
           let hawlBadge = null;
@@ -1421,9 +1416,20 @@
               title: complete ? "Hawl complete — this asset is eligible" : daysLeft + " days until this asset completes one lunar year",
             });
           }
-          const detailCell = el("td", { class: "muted" });
-          if (detail) detailCell.appendChild(document.createTextNode(detail));
-          if (hawlBadge) detailCell.appendChild(hawlBadge);
+          // Combined info cell: category pill + description + detail line + hawl badge
+          const infoCell = el("td", { class: "asset-info-cell" });
+          const topRow = el("div", { class: "asset-top" });
+          topRow.appendChild(el("span", { class: "pill gray asset-cat-pill", text: (CATEGORY_ICONS[a.category] ? CATEGORY_ICONS[a.category] + " " : "") + a.category }));
+          if (thumb) topRow.appendChild(thumb);
+          topRow.appendChild(document.createTextNode(" " + (a.description || a.category)));
+          infoCell.appendChild(topRow);
+          if (detail || hawlBadge) {
+            const subRow = el("div", { class: "asset-sub" });
+            if (detail) subRow.appendChild(document.createTextNode(detail));
+            if (hawlBadge) subRow.appendChild(hawlBadge);
+            infoCell.appendChild(subRow);
+          }
+          infoCell.addEventListener("click", () => assetForm(m.id, a));
 
           // Value cell — tap to edit inline.
           // For weight-based metals (Gold/Silver/Platinum) and PF, the displayed
@@ -1479,14 +1485,9 @@
           });
           valCell.appendChild(valBtn);
 
-          return el("tr", null, [
-            el("td", null, el("span", { class: "pill gray", text: (CATEGORY_ICONS[a.category] ? CATEGORY_ICONS[a.category] + " " : "") + a.category })),
-            descCell,
-            detailCell,
-            valCell,
-          ]);
+          return el("tr", null, [infoCell, valCell]);
         });
-        const thead = el("thead", null, el("tr", null, [th("Category"), th("Description"), th("Details"), th("Value", true)]));
+        const thead = el("thead", null, el("tr", null, [th("Asset"), th("Value", true)]));
         body.appendChild(el("div", { class: "table-wrap" }, sortable(el("table", null, [thead, el("tbody", null, rows)]))));
       }
 
@@ -1545,8 +1546,30 @@
     });
   }
 
+  // Returns true if member's age is below Islamic majority (~15 years).
+  function isMinorMember(m) {
+    if (!m || !m.dob) return false;
+    return (Date.now() - new Date(m.dob).getTime()) / (365.25 * 24 * 3600 * 1000) < 15;
+  }
+
   // Per-member Zakat breakdown card (component zakat, nisab, hawl-pending).
   function memberBreakdownNode(s) {
+    // Minor detection: look up member DOB from store
+    const memberData = Store.getMember(s.member_id);
+    const dobStr = memberData ? memberData.dob : null;
+    let isMinor = false;
+    let zakatDueDate = null;
+    if (dobStr) {
+      const birth = new Date(dobStr);
+      const ageYears = (Date.now() - birth.getTime()) / (365.25 * 24 * 3600 * 1000);
+      isMinor = ageYears < 15;
+      if (isMinor) {
+        const due = new Date(birth);
+        due.setFullYear(due.getFullYear() + 15);
+        zakatDueDate = due.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+      }
+    }
+
     const items = [];
     function add(text) { items.push(el("div", { class: "bd-item", text: text })); }
     if (s.gold_zakat_inr || s.total_gold_grams) add("Gold " + ZK.fmtGrams(s.total_gold_grams) + "g \u2192 " + ZK.fmtINR(s.gold_zakat_inr));
@@ -1566,18 +1589,27 @@
     const wrap = el("div", { class: "breakdown" });
     wrap.appendChild(el("div", { class: "bd-head" }, [
       document.createTextNode(s.member_name + " "),
-      el("span", { class: "pill " + (s.is_eligible ? "green" : "gray"), text: s.is_eligible ? "Eligible" : "Not eligible" }),
+      isMinor
+        ? el("span", { class: "pill amber", text: "Minor" })
+        : el("span", { class: "pill " + (s.is_eligible ? "green" : "gray"), text: s.is_eligible ? "Eligible" : "Not eligible" }),
     ]));
+    if (isMinor) {
+      wrap.appendChild(el("div", { class: "bd-note warn", html:
+        "<strong>Minor \u2014 Zakat not obligatory yet.</strong> Age of maturity (bul\u016bgh) is approximately 15 lunar years." +
+        (zakatDueDate ? " Zakat becomes due from <strong>" + zakatDueDate + "</strong>." : "") +
+        "<br><small>Hanafi: fully exempt until bul\u016bgh. M\u0101lik\u012b / Sh\u0101fi\u02bfi\u012b / \u1e24anbal\u012b: guardian may pay zakat from the minor\u2019s wealth.</small>",
+      }));
+    }
     if (items.length) wrap.appendChild(el("div", { class: "bd-grid" }, items));
     wrap.appendChild(el("div", { class: "bd-total", text:
       "Wealth " + ZK.fmtINR(s.total_wealth_inr) +
       " \u00b7 Nisab (" + s.nisab_basis + ") " + ZK.fmtINR(s.nisab_threshold_inr) +
       " \u00b7 Due " + ZK.fmtINR(s.zakat_due_inr) + " \u00b7 Paid " + ZK.fmtINR(s.total_paid_inr) +
       " \u00b7 Remaining " + ZK.fmtINR(Math.max(0, s.remaining_inr)) }));
-    if (s.hawl_pending_wealth_inr > 0) {
+    if (!isMinor && s.hawl_pending_wealth_inr > 0) {
       wrap.appendChild(el("div", { class: "bd-note warn", text: s.assets_pending_hawl + " asset(s) awaiting hawl (~354 lunar days): " + ZK.fmtINR(s.hawl_pending_wealth_inr) + " not included yet." }));
     }
-    if (s.jewelry_exempt) {
+    if (!isMinor && s.jewelry_exempt) {
       wrap.appendChild(el("div", { class: "bd-note", text: "Tip: mark personal adornment on gold/silver/diamond assets to apply your school's jewelry exemption." }));
     }
     return wrap;
@@ -1641,19 +1673,35 @@
   }
 
   function memberForm(existing) {
+    const allMembers = Store.members();
     const name = el("input", { type: "text", value: existing ? existing.name : "", placeholder: Help.t("ph_member_name") });
     const rel = el("input", { type: "text", value: existing ? existing.relationship : "", placeholder: Help.t("ph_member_rel") });
-    const body = el("form", null, [
-      helpLangBar(),
-      helpNode("member_intro", "form-intro"),
+    const dob = el("input", { type: "date", value: existing && existing.dob ? existing.dob : "" });
+
+    // "Copy from existing" — only shown when adding a new member and others exist
+    const formItems = [helpLangBar(), helpNode("member_intro", "form-intro")];
+    if (!existing && allMembers.length) {
+      const copySelect = el("select");
+      copySelect.appendChild(el("option", { value: "", text: "— choose a member —" }));
+      allMembers.forEach((m) => copySelect.appendChild(el("option", { value: String(m.id), text: m.name + (m.relationship ? " (" + m.relationship + ")" : "") })));
+      copySelect.addEventListener("change", () => {
+        const src = allMembers.find((m) => String(m.id) === copySelect.value);
+        if (src) { name.value = src.name; rel.value = src.relationship || ""; dob.value = src.dob || ""; }
+      });
+      formItems.push(field("Copy from existing", copySelect));
+    }
+    formItems.push(
       fieldK("Name", name, "member_name"),
       fieldK("Relationship", rel, "member_rel"),
-    ]);
+      field("Date of birth (optional)", dob),
+    );
+
+    const body = el("form", null, formItems);
     const save = el("button", { class: "btn", text: existing ? "Save" : "Add member", onclick: (e) => {
       e.preventDefault();
       if (!name.value.trim()) { toast("Name is required", "err"); return; }
-      if (existing) Store.updateMember(existing.id, name.value, rel.value);
-      else Store.addMember(name.value, rel.value);
+      if (existing) Store.updateMember(existing.id, name.value, rel.value, dob.value || null);
+      else Store.addMember(name.value, rel.value, dob.value || null);
       closeModal(); refreshAll(); toast("Saved", "ok");
     } });
     openModal(existing ? "Edit member" : "Add family member", body, [
