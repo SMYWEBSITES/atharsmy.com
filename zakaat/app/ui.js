@@ -579,12 +579,7 @@
     document.getElementById("tabs").addEventListener("click", (e) => {
       const btn = e.target.closest(".tab-btn");
       if (!btn) return;
-      const tab = btn.dataset.tab;
-      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b === btn));
-      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
-      document.getElementById("tab-" + tab).classList.remove("hidden");
-      renderTab(tab);
-      trackTabView(tab);
+      switchTab(btn.dataset.tab);
     });
   }
 
@@ -3226,8 +3221,48 @@
       });
   }
 
+  // Track tab navigation history for Android back button
+  var _tabHistory = ["dashboard"];
+
+  function switchTab(tab) {
+    if (_tabHistory[_tabHistory.length - 1] !== tab) _tabHistory.push(tab);
+    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
+    document.getElementById("tab-" + tab).classList.remove("hidden");
+    renderTab(tab);
+    trackTabView(tab);
+  }
+
+  function setupAndroidBack() {
+    // Only runs inside Capacitor native shell
+    if (typeof window.Capacitor === "undefined") return;
+    var plugins = window.Capacitor.Plugins;
+    if (!plugins || !plugins.App) return;
+    plugins.App.addListener("backButton", function () {
+      // 1. Close open modal first
+      var modalRoot = document.getElementById("modal-root");
+      if (modalRoot && modalRoot.firstChild) { closeModal(); return; }
+      // 2. Go back to previous tab
+      if (_tabHistory.length > 1) {
+        _tabHistory.pop();
+        var prev = _tabHistory[_tabHistory.length - 1];
+        switchTab(prev);
+        return;
+      }
+      // 3. On Dashboard (no history) — confirm exit
+      confirmDialog(
+        "Exit Zakat",
+        "Are you sure you want to exit?",
+        function () { plugins.App.exitApp(); },
+        "Exit",
+        true
+      );
+    });
+  }
+
   function bootApp(opts) {
     opts = opts || {};
+    _tabHistory = ["dashboard"];
     baseline = ZK.zakatAsOf();
     setupTabs();
     renderChrome();
@@ -3236,6 +3271,7 @@
     renderDashboard();
     trackTabView("dashboard");
     maybeTrackFamilyNameActive();
+    setupAndroidBack();
     if (opts.fetchRates !== false) maybeAutoFetchRates();
   }
 
