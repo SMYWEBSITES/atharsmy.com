@@ -73,7 +73,7 @@
   <div id="toast-root"></div>
 
   <!-- Preload the two heaviest app scripts so they start downloading in parallel with CSS -->
-  <link rel="preload" as="script" href="app/ui.js?v=20260902f" />
+  <link rel="preload" as="script" href="app/ui.js?v=20260902g" />
   <link rel="preload" as="script" href="app/help.js?v=20260816c" />
   <!-- defer: scripts execute in order after HTML is parsed (non-blocking) -->
   <!-- xlsx.full.min.js (932 KB) is lazy-loaded by excel.js when the Backup tab is first used -->
@@ -85,7 +85,7 @@
   <script src="app/rates_history.js?v=20260810" defer></script>
   <script src="app/gdrive.js?v=20260902h" defer></script>
   <script src="app/help.js?v=20260816c" defer></script>
-  <script src="app/ui.js?v=20260902f" defer></script>
+  <script src="app/ui.js?v=20260902g" defer></script>
   <script>
     // Skip service worker inside Capacitor — it handles its own file serving
     if ("serviceWorker" in navigator && !window.Capacitor) {

@@ -3234,11 +3234,11 @@
   }
 
   function setupAndroidBack() {
-    // Only runs inside Capacitor native shell
+    // Only runs inside Capacitor native shell.
+    // MainActivity fires "backbutton" on document via getBridge().triggerJSEvent().
     if (typeof window.Capacitor === "undefined") return;
-    var plugins = window.Capacitor.Plugins;
-    if (!plugins || !plugins.App) return;
-    plugins.App.addListener("backButton", function () {
+
+    document.addEventListener("backbutton", function () {
       // 1. Close open modal first
       var modalRoot = document.getElementById("modal-root");
       if (modalRoot && modalRoot.firstChild) { closeModal(); return; }
@@ -3253,7 +3253,11 @@
       confirmDialog(
         "Exit Zakat",
         "Are you sure you want to exit?",
-        function () { plugins.App.exitApp(); },
+        function () {
+          var plugins = window.Capacitor && window.Capacitor.Plugins;
+          if (plugins && plugins.App) plugins.App.exitApp();
+          else getActivity && getActivity().finish();
+        },
         "Exit",
         true
       );
