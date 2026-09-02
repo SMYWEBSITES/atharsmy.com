@@ -1744,25 +1744,49 @@
     const empMonthly = el("input", { type: "number", step: "0.01", value: existing && existing.monthly_contribution_employee != null ? existing.monthly_contribution_employee : "" });
     const erMonthly = el("input", { type: "number", step: "0.01", value: existing && existing.monthly_contribution_employer != null ? existing.monthly_contribution_employer : "" });
     const annualRate = el("input", { type: "number", step: "0.01", value: existing && existing.annual_interest_rate != null ? existing.annual_interest_rate : "", placeholder: "8.25" });
-    const imageInput = el("input", { type: "file", accept: "image/*" });
+    // Hidden file inputs — one for camera, one for gallery
+    const cameraInput = el("input", { type: "file", accept: "image/*", capture: "environment", style: "display:none" });
+    const galleryInput = el("input", { type: "file", accept: "image/*", style: "display:none" });
     let imageData = existing ? existing.image : null;
     let imageName = existing ? existing.image_filename : null;
     const imagePreview = el("div");
     function renderImagePreview() {
       clear(imagePreview);
       if (imageData) {
-        imagePreview.appendChild(el("img", { class: "asset-thumb", style: "width:60px;height:60px", src: imageData, alt: "" }));
-        imagePreview.appendChild(el("button", { class: "link", style: "margin-left:10px;color:#dc2626", text: "Remove image", onclick: (e) => { e.preventDefault(); imageData = null; imageName = null; renderImagePreview(); } }));
+        imagePreview.appendChild(el("img", { class: "asset-thumb", style: "width:60px;height:60px;object-fit:cover;border-radius:6px", src: imageData, alt: "" }));
+        imagePreview.appendChild(el("button", { class: "link", style: "margin-left:10px;color:#dc2626", text: "Remove", onclick: (e) => { e.preventDefault(); imageData = null; imageName = null; renderImagePreview(); } }));
       }
     }
-    renderImagePreview();
-    imageInput.addEventListener("change", () => {
-      const f = imageInput.files[0];
+    function readImageFile(f) {
       if (!f) return;
       const reader = new FileReader();
       reader.onload = (e) => { imageData = e.target.result; imageName = f.name; renderImagePreview(); };
       reader.readAsDataURL(f);
+    }
+    cameraInput.addEventListener("change", () => readImageFile(cameraInput.files[0]));
+    galleryInput.addEventListener("change", () => readImageFile(galleryInput.files[0]));
+
+    // Photo button — shows camera/gallery choice on mobile, single picker on desktop
+    const isCapacitorNative = typeof window.Capacitor !== "undefined" && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || isCapacitorNative;
+    const photoBtn = el("button", {
+      class: "btn secondary",
+      type: "button",
+      text: "📷 Add Photo",
+      onclick: (e) => {
+        e.preventDefault();
+        if (!isMobile) { galleryInput.click(); return; }
+        // Show inline choice: camera or gallery
+        const menu = el("div", { style: "display:flex;gap:8px;margin-top:6px;flex-wrap:wrap" }, [
+          el("button", { class: "btn secondary", type: "button", text: "📷 Camera", onclick: (ev) => { ev.preventDefault(); menu.remove(); cameraInput.click(); } }),
+          el("button", { class: "btn secondary", type: "button", text: "🖼️ Gallery", onclick: (ev) => { ev.preventDefault(); menu.remove(); galleryInput.click(); } }),
+          el("button", { class: "btn", type: "button", text: "Cancel", onclick: (ev) => { ev.preventDefault(); menu.remove(); } }),
+        ]);
+        photoBtn.insertAdjacentElement("afterend", menu);
+      },
     });
+    const imageInput = el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" }, [photoBtn, cameraInput, galleryInput]);
+    renderImagePreview();
 
     const preview = el("div", { class: "preview" });
 
