@@ -1754,8 +1754,32 @@
     }
     function readImageFile(f) {
       if (!f) return;
+      const MAX_PX = 480; // max width or height in pixels
+      const QUALITY = 0.75;
       const reader = new FileReader();
-      reader.onload = (e) => { imageData = e.target.result; imageName = f.name; renderImagePreview(); };
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            let w = img.naturalWidth, h = img.naturalHeight;
+            if (w > MAX_PX || h > MAX_PX) {
+              if (w >= h) { h = Math.round(h * MAX_PX / w); w = MAX_PX; }
+              else { w = Math.round(w * MAX_PX / h); h = MAX_PX; }
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = w; canvas.height = h;
+            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+            imageData = canvas.toDataURL("image/jpeg", QUALITY);
+          } catch (_) {
+            // Canvas tainted or unavailable — fall back to original
+            imageData = e.target.result;
+          }
+          imageName = f.name.replace(/\.[^.]+$/, ".jpg");
+          renderImagePreview();
+        };
+        img.onerror = () => { imageData = e.target.result; imageName = f.name; renderImagePreview(); };
+        img.src = e.target.result;
+      };
       reader.readAsDataURL(f);
     }
     cameraInput.addEventListener("change", () => readImageFile(cameraInput.files[0]));
