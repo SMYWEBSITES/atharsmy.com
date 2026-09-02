@@ -915,15 +915,51 @@
     );
   }
 
-  function backup(date) {
+  // ── Conflict detection ───────────────────────────────────────────────────
+  // When multiple sessions (tabs / devices) are open they can each auto-save
+  // and silently overwrite each other. We guard against this by recording the
+  // last *known* Drive modifiedTime after every upload/restore and comparing it
+  // against the current Drive file before the next upload.
+  //
+  // The check relies on the modifiedTime returned by the Google Drive API
+  // (returned with every upload response and with every file-listing call).
+  // A 30-second skew buffer avoids false positives from tiny clock differences.
+  const CONFLICT_SKEW_MS = 30000;
+
+  let conflictCb = null;
+  function setConflictCallback(cb) { conflictCb = cb; }
+  function notifyConflict(fileName, modifiedTime) {
+    if (conflictCb) conflictCb(fileName, modifiedTime);
+  }
+
+  function backup(date, opts) {
     const Excel = global.ZKExcel;
     if (!Excel || !Excel.buildBackupBuffer) {
       return Promise.reject(new Error("Excel backup module not loaded."));
     }
+    const force = !!(opts && opts.force);
 
     return ensureToken()
       .then(() => prepareCurrentMonth(date))
       .then((ctx) => {
+        // Conflict guard: another session saved to Drive since our last upload.
+        // prepareCurrentMonth already fetched ctx.existing with its modifiedTime,
+        // so this check is free (no extra API call).
+        if (!force && ctx.existing && ctx.existing.modifiedTime) {
+          const cfg = loadCfg();
+          const knownModified = cfg.last_drive_modified;
+          if (knownModified) {
+            const driveMs = new Date(ctx.existing.modifiedTime).getTime();
+            const knownMs = new Date(knownModified).getTime();
+            if (driveMs > knownMs + CONFLICT_SKEW_MS) {
+              const err = new Error("drive_conflict");
+              err.driveConflict = true;
+              err.modifiedTime = ctx.existing.modifiedTime;
+              err.fileName = ctx.fileName;
+              throw err;
+            }
+          }
+        }
         return Excel.buildBackupBuffer().then((buf) => {
           const bytes = new Uint8Array(buf);
           return uploadXlsx(ctx.folderId, ctx.fileName, bytes, ctx.existing && ctx.existing.id).then((res) => ({
@@ -938,6 +974,7 @@
           last_sync: when,
           last_file_name: ctx.fileName,
           last_file_id: res.id || null,
+          last_drive_modified: res.modifiedTime || null, // track Drive's own timestamp
           active_month: monthKey(date),
         });
         return {
@@ -949,6 +986,12 @@
           source: ctx.source || null,
         };
       });
+  }
+
+  // Force-save regardless of conflict — called when user explicitly chooses
+  // to overwrite Drive with their current local data.
+  function backupForce(date) {
+    return backup(date, { force: true });
   }
 
   function maybeSyncMonthRollover() {
@@ -992,25 +1035,52 @@
         }))
       )
       .then((result) => {
-        saveCfg({ last_sync: new Date().toISOString(), last_file_name: result.fileName });
+        // Record the Drive file's own timestamp so the next conflict check
+        // knows which version we're "in sync with".
+        saveCfg({
+          last_sync: new Date().toISOString(),
+          last_file_name: result.fileName,
+          last_drive_modified: result.modifiedTime || null,
+        });
         return result;
       });
   }
 
   function scheduleAutoBackup() {
     if (!getAutoSync() || !isConfigured() || !getDriveEnabled() || !isConnected()) return;
+    // Don't auto-save from a background/hidden tab — only the visible session writes.
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
     clearTimeout(autoTimer);
-    autoTimer = setTimeout(() => {
+    autoTimer = setTimeout(function () {
       if (!isConnected()) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       backup()
-        .then((res) => {
-          const msg = res.rolled
+        .then(function (res) {
+          var msg = res.rolled
             ? "New month backup created: " + res.path + (res.source ? " (from " + res.source + ")" : "")
             : "Auto-saved to Drive: " + res.path;
           notify("ok", msg);
         })
-        .catch((e) => notify("err", "Auto-save failed: " + (e.message || e)));
+        .catch(function (e) {
+          if (e.driveConflict) {
+            // Another session saved to Drive since our last sync — let the UI handle it.
+            notifyConflict(e.fileName, e.modifiedTime);
+          } else {
+            notify("err", "Auto-save failed: " + (e.message || e));
+          }
+        });
     }, 2000);
+  }
+
+  // Re-check for conflicts when the user switches back to this tab — another
+  // session may have saved while this tab was in the background.
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") {
+        // Small delay so the page has focus before triggering any Drive call.
+        setTimeout(scheduleAutoBackup, 500);
+      }
+    });
   }
 
   // ── Startup migrations ────────────────────────────────────────────────────
@@ -1044,6 +1114,7 @@
     onConnectChange,
     disconnect,
     backup,
+    backupForce,
     restore,
     listBackups,
     backupFileName,
@@ -1061,6 +1132,7 @@
     maybeSyncMonthRollover,
     prepareCurrentMonth,
     setStatusCallback,
+    setConflictCallback,
     refreshAccessToken,
     SCOPE,
     FOLDER_FAMILY,
