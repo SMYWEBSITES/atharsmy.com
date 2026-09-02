@@ -1346,7 +1346,39 @@
       return;
     }
 
-    members.forEach((m) => {
+    // Search bar (only shown when there are 3+ members)
+    let searchQuery = "";
+    let searchInput = null;
+    const memberContainer = el("div");
+    if (members.length >= 3) {
+      const searchWrap = el("div", { class: "panel", style: "padding:10px 16px" });
+      searchInput = el("input", {
+        type: "search",
+        placeholder: "Search family members…",
+        style: "width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px",
+      });
+      searchInput.addEventListener("input", () => {
+        searchQuery = searchInput.value.trim().toLowerCase();
+        renderMembers();
+      });
+      searchWrap.appendChild(searchInput);
+      panel.appendChild(searchWrap);
+    }
+    panel.appendChild(memberContainer);
+
+    function renderMembers() {
+      clear(memberContainer);
+      const filtered = members.filter((m) =>
+        !searchQuery ||
+        m.name.toLowerCase().includes(searchQuery) ||
+        (m.relationship || "").toLowerCase().includes(searchQuery)
+      );
+      if (!filtered.length) {
+        const term = searchInput ? searchInput.value.trim() : searchQuery;
+        memberContainer.appendChild(el("div", { class: "panel" }, el("div", { class: "empty", text: "No members match “" + term + "”" })));
+        return;
+      }
+      filtered.forEach((m) => {
       const summary = ZK.computeMemberZakat(m, m.assets || [], m.zakat_payments || [], rates, madhab, baseline);
       const block = el("div", { class: "member-block", "data-collapsed": "true" });
 
@@ -1541,8 +1573,10 @@
       }
 
       block.appendChild(body);
-      panel.appendChild(block);
+      memberContainer.appendChild(block);
     });
+  } // end renderMembers
+    renderMembers();
   }
 
   // Returns true if member's age is below Islamic majority (~15 years).
