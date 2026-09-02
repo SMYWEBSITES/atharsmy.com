@@ -255,13 +255,13 @@
             return;
           }
           files.forEach((f) => {
-            driveSelect.appendChild(el("option", {
-              value: f.name,
-              text: f.name + (f.modifiedTime ? " \u2014 " + new Date(f.modifiedTime).toLocaleString() : ""),
-            }));
+            const isJson = /\.json$/i.test(f.name);
+            const label = (isJson ? "\ud83d\udccb JSON snapshot: " : "\ud83d\udcca Excel: ") +
+              f.name + (f.modifiedTime ? " \u2014 " + new Date(f.modifiedTime).toLocaleString() : "");
+            driveSelect.appendChild(el("option", { value: f.name, text: label }));
           });
           status.className = "notice compact ok";
-          status.textContent = "Choose a backup to replace your current data.";
+          status.textContent = "Choose a backup to replace your current data. JSON snapshots restore faster; Excel backups are the full archive.";
         })
         .catch((e) => {
           status.className = "notice compact err";
@@ -288,17 +288,21 @@
       onclick: () => {
         const fileName = driveSelect.value;
         if (!fileName) { toast("Choose a backup file", "err"); return; }
+        const isJson = /\.json$/i.test(fileName);
         confirmDialog(
           "Replace all data",
           "This replaces everything in this browser with " + fileName + " from Google Drive. Continue?",
           () => {
-            Drive.restore(fileName)
-              .then((res) => {
-                closeModal();
-                refreshAll();
-                toast("Replaced with " + res.counts.members + " member(s) from " + res.fileName, "ok");
-              })
-              .catch((e) => toast(e.message || String(e), "err"));
+            const restoreOp = isJson
+              ? Drive.restoreFromStateJson(fileName).then((res) => {
+                  closeModal(); refreshAll();
+                  toast("Restored from JSON snapshot: " + res.fileName, "ok");
+                })
+              : Drive.restore(fileName).then((res) => {
+                  closeModal(); refreshAll();
+                  toast("Replaced with " + res.counts.members + " member(s) from " + res.fileName, "ok");
+                });
+            restoreOp.catch((e) => toast(e.message || String(e), "err"));
           },
           "Replace & open",
           true
@@ -2422,14 +2426,22 @@
     driveOpenBtn.addEventListener("click", () => {
       const fileName = driveSelect.value;
       if (!fileName) { toast("Choose a backup file", "err"); return; }
+      const isJson = /\.json$/i.test(fileName);
       driveOpenBtn.disabled = true;
-      Drive.restore(fileName)
-        .then((res) => {
-          closeModal();
-          if (typeof onDone === "function") onDone();
-          refreshAll();
-          toast("Opened " + res.counts.members + " member(s) from " + res.fileName, "ok");
-        })
+      const openOp = isJson
+        ? Drive.restoreFromStateJson(fileName).then((res) => {
+            closeModal();
+            if (typeof onDone === "function") onDone();
+            refreshAll();
+            toast("Restored from JSON snapshot: " + res.fileName, "ok");
+          })
+        : Drive.restore(fileName).then((res) => {
+            closeModal();
+            if (typeof onDone === "function") onDone();
+            refreshAll();
+            toast("Opened " + res.counts.members + " member(s) from " + res.fileName, "ok");
+          });
+      openOp
         .catch((e) => toast(e.message || String(e), "err"))
         .finally(() => { driveOpenBtn.disabled = !driveSelect.value; });
     });

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "zakaat-local",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "7472", "--directory", "/Users/smyaltamash/customCode/atharsmy.com"],
+      "port": 7472,
+      "url": "http://localhost:7472"
+    }
+  ]
+}

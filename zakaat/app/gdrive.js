@@ -59,7 +59,13 @@
   const FILES_API = "https://www.googleapis.com/drive/v3/files";
   const UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
   const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  const STATE_JSON_FILE = "zakaat_state.json"; // small JSON snapshot used for auto-merge
+  const STATE_JSON_FILE = "zakaat_state.json"; // live merge anchor — overwritten on every save
+  // Monthly state snapshot — one per month, kept permanently alongside the Excel file.
+  // Named "zakaat_state_sep_2026.json" etc. so it is distinct from the live anchor.
+  function stateJsonFileName(date) {
+    var d = date || new Date();
+    return "zakaat_state_" + MONTHS[d.getMonth()] + "_" + d.getFullYear() + ".json";
+  }
 
   const FOLDER_FAMILY = "MY_FAMILY";
   const FOLDER_ZAKAAT = "ZAKAAT";
@@ -893,14 +899,18 @@
     return driveFetch(url, { headers: authHeaders() }).then((r) => r.arrayBuffer());
   }
 
+  // Monthly JSON snapshot filename pattern — matches "zakaat_state_sep_2026.json" but
+  // NOT the live anchor "zakaat_state.json" (which has no month segment).
+  var MONTHLY_JSON_RE = /^zakaat_state_[a-z]{3}_\d{4}\.json$/i;
+
   function listFilesInFolder(folderId) {
     const q = "'" + folderId + "' in parents and trashed=false and name contains 'zakaat_'";
     const url =
       FILES_API + "?q=" + encodeURIComponent(q) +
-      "&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=50";
+      "&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=100";
     return driveFetch(url, { headers: authHeaders() })
       .then((r) => r.json())
-      .then((d) => (d.files || []).filter((f) => /\.xlsx$/i.test(f.name)));
+      .then((d) => (d.files || []).filter((f) => /\.xlsx$/i.test(f.name) || MONTHLY_JSON_RE.test(f.name)));
   }
 
   function listBackups() {
@@ -960,15 +970,22 @@
     }
 
     var didMerge = false;
-    var stateFileId = null; // Drive file ID for zakaat_state.json (found during conflict check)
+    var stateFileId = null;        // Drive file ID for zakaat_state.json (live anchor)
+    var monthlyJsonFileId = null;  // Drive file ID for zakaat_state_MMM_YYYY.json (monthly snapshot)
 
     return ensureToken()
       .then(function () { return ensureZakaatFolder(); })
       .then(function (folderId) {
-        // Step 1: Check the JSON state file for changes from another session.
+        // Step 1: Check both the live JSON anchor and this month's snapshot for their file IDs.
         // findFileInFolder is lightweight (metadata only, not a download).
-        return findFileInFolder(folderId, STATE_JSON_FILE).then(function (stateFile) {
+        var monthlyName = stateJsonFileName(date);
+        return Promise.all([
+          findFileInFolder(folderId, STATE_JSON_FILE),
+          findFileInFolder(folderId, monthlyName),
+        ]).then(function (results) {
+          var stateFile = results[0], monthlyFile = results[1];
           stateFileId = stateFile ? stateFile.id : null;
+          monthlyJsonFileId = monthlyFile ? monthlyFile.id : null;
           var cfg = loadCfg();
           var lastKnown = cfg.last_state_modified;
           if (stateFile && stateFile.modifiedTime && lastKnown) {
@@ -996,13 +1013,18 @@
       })
       .then(function (pack) {
         var folderId = pack.folderId, ctx = pack.ctx;
-        // Step 3: Build Excel from (possibly merged) state, then upload JSON + Excel.
+        // Step 3: Build Excel from (possibly merged) state, then upload in parallel:
+        //   a) Excel monthly backup
+        //   b) zakaat_state.json  — live anchor for auto-merge
+        //   c) zakaat_state_MMM_YYYY.json — monthly snapshot kept permanently
         return Excel.buildBackupBuffer().then(function (buf) {
           var xlsxBytes = new Uint8Array(buf);
           var stateJson = JSON.stringify(Store ? Store.exportState() : {});
+          var monthlyName = stateJsonFileName(date);
           return Promise.all([
             uploadXlsx(ctx.folderId || folderId, ctx.fileName, xlsxBytes, ctx.existing && ctx.existing.id),
             uploadJson(folderId, STATE_JSON_FILE, stateJson, stateFileId),
+            uploadJson(folderId, monthlyName, stateJson, monthlyJsonFileId),
           ]).then(function (results) {
             return { xlsxRes: results[0], jsonRes: results[1], ctx: ctx };
           });
@@ -1087,6 +1109,33 @@
       });
   }
 
+  // Restore from a monthly JSON state snapshot (zakaat_state_MMM_YYYY.json).
+  // Replaces all local data with the snapshot's content — same semantics as
+  // restore() but reads JSON instead of Excel.
+  function restoreFromStateJson(fileName) {
+    var Store = global.ZKStore;
+    if (!Store || !Store.importState) {
+      return Promise.reject(new Error("Store module not loaded."));
+    }
+    return ensureToken()
+      .then(function () { return ensureZakaatFolder(); })
+      .then(function (folderId) { return findFileInFolder(folderId, fileName); })
+      .then(function (file) {
+        if (!file) throw new Error("No snapshot found: " + fileName);
+        return downloadFile(file.id).then(function (buf) {
+          return { buf: buf, file: file };
+        });
+      })
+      .then(function (pack) {
+        var text = new TextDecoder().decode(pack.buf);
+        var parsed = JSON.parse(text);
+        Store.importState(parsed);
+        // Reset the merge baseline so the next auto-save uploads fresh copies.
+        saveCfg({ last_sync: new Date().toISOString(), last_file_name: pack.file.name, last_state_modified: null });
+        return { fileName: pack.file.name, modifiedTime: pack.file.modifiedTime };
+      });
+  }
+
   function scheduleAutoBackup() {
     if (!getAutoSync() || !isConfigured() || !getDriveEnabled() || !isConnected()) return;
     // Don't auto-save from a background/hidden tab — only the visible session writes.
@@ -1154,8 +1203,10 @@
     backup,
     backupForce,
     restore,
+    restoreFromStateJson,
     listBackups,
     backupFileName,
+    stateJsonFileName,
     folderPathLabel,
     getPageOrigin,
     originMismatchHelp,
