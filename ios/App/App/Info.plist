@@ -74,6 +74,15 @@
 				<string>com.atharsmy.zakat</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.atharsmy.zakat.google-oauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- Reverse-client-ID scheme for Google OAuth PKCE redirect (iOS client) -->
+				<string>com.googleusercontent.apps.1013887002929-kulc4m2njt1j3mh1vc4go28q8ue28hau</string>
+			</array>
+		</dict>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>

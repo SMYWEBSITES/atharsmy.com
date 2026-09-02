@@ -22,13 +22,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- OAuth redirect URI: com.atharsmy.zakat://oauth2callback -->
+            <!-- OAuth redirect URI (reverse-client-ID scheme — auto-validated by Google for Android clients) -->
+            <!-- URI: com.googleusercontent.apps.1013887002929-qd4qgoh2gtg918n677mdsu93ec3cu8l1:/oauth2redirect -->
+            <!-- Single-slash path-only URI — no android:host so Android catches it -->
             <!-- Google opens this after sign-in; Capacitor fires the appUrlOpen event -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.atharsmy.zakat" android:host="oauth2callback" />
+                <data android:scheme="com.googleusercontent.apps.1013887002929-qd4qgoh2gtg918n677mdsu93ec3cu8l1" />
             </intent-filter>
 
         </activity>

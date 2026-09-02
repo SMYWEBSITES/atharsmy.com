@@ -26,12 +26,17 @@
 
   // Web client (GIS popup flow — browser only)
   const DEFAULT_CLIENT_ID = "1013887002929-tp0qaue517d1650g3gq9jtjkgq91r629.apps.googleusercontent.com";
-  // Android client — validates via package name + SHA-1, no redirect URI registration needed.
+  // Android client — Android-type OAuth client; validates SHA-1 fingerprint + package name.
+  // Uses the reverse-client-ID redirect URI scheme which Google auto-validates (no GCC registration needed).
   const DEFAULT_ANDROID_CLIENT_ID = "1013887002929-qd4qgoh2gtg918n677mdsu93ec3cu8l1.apps.googleusercontent.com";
   // iOS client — validates via bundle ID (com.atharsmy.zakat), no redirect URI registration needed.
   const DEFAULT_IOS_CLIENT_ID     = "1013887002929-kulc4m2njt1j3mh1vc4go28q8ue28hau.apps.googleusercontent.com";
   // Fallback alias kept for any stored overrides in localStorage.
   const DEFAULT_MOBILE_CLIENT_ID  = DEFAULT_ANDROID_CLIENT_ID;
+  // Legacy client IDs that must be cleared from localStorage so the new default is used.
+  const STALE_MOBILE_CLIENT_IDS = [
+    "1013887002929-m4n5t9tv04ev32879pf89uib28d997j2.apps.googleusercontent.com", // Desktop-type (retired)
+  ];
   const GIS_SRC = "https://accounts.google.com/gsi/client";
   const SCOPE = "https://www.googleapis.com/auth/drive.file";
   const CFG_KEY = "zakat_gdrive_cfg_v1";
@@ -39,9 +44,16 @@
   const TOKEN_KEY = "zakat_gdrive_token_v1";
 
   // ── Mobile OAuth (PKCE) constants ──────────────────────────────────────────
-  // Redirect URI registered as a custom scheme — Android catches it via the
-  // intent filter in AndroidManifest.xml; iOS via CFBundleURLTypes in Info.plist
-  const PKCE_REDIRECT_URI   = "com.atharsmy.zakat://oauth2callback";
+  // Reverse-client-ID redirect URI — Google auto-validates this for Android-type
+  // OAuth clients (no GCC "Authorized redirect URIs" registration required).
+  // Android catches it via the intent-filter (scheme-only, no host required).
+  // iOS catches it via CFBundleURLTypes in Info.plist.
+  // Both use single-slash path-only format: com.googleusercontent.apps.<id>:/oauth2redirect
+  // The URI is derived at runtime from whichever client ID is active (Android or iOS).
+  function pkceRedirectUri(clientId) {
+    var prefix = clientId.replace(/\.apps\.googleusercontent\.com$/, "");
+    return "com.googleusercontent.apps." + prefix + ":/oauth2redirect";
+  }
   const OAUTH_AUTH_ENDPOINT  = "https://accounts.google.com/o/oauth2/v2/auth";
   const OAUTH_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
   const FILES_API = "https://www.googleapis.com/drive/v3/files";
@@ -121,8 +133,8 @@
 
   // ── Mobile OAuth (PKCE + Custom Tab) ──────────────────────────────────────
   // Opens the Google consent screen in a Chrome Custom Tab (not the WebView).
-  // Google redirects to com.atharsmy.zakat://oauth2callback which Android
-  // hands back to the app; Capacitor fires the 'appUrlOpen' event.
+  // Google redirects to the reverse-client-ID URI which Android catches via
+  // the intent-filter; Capacitor fires the 'appUrlOpen' event.
   function connectMobile(opts) {
     return new Promise(function (resolve, reject) {
       var plugins = capacitorPlugins();
@@ -142,6 +154,11 @@
         return;
       }
 
+      // Derive the redirect URI from the active client ID so the same code works
+      // on both Android (Android-type client) and iOS (iOS-type client).
+      var redirectUri = pkceRedirectUri(clientId);
+      var redirectScheme = redirectUri.split(":")[0] + ":";
+
       var verifier = pkceVerifier();
       var state = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 
@@ -149,7 +166,7 @@
         var authUrl =
           OAUTH_AUTH_ENDPOINT +
           "?client_id="             + encodeURIComponent(clientId) +
-          "&redirect_uri="          + encodeURIComponent(PKCE_REDIRECT_URI) +
+          "&redirect_uri="          + encodeURIComponent(redirectUri) +
           "&response_type=code" +
           "&scope="                 + encodeURIComponent(SCOPE) +
           "&code_challenge="        + encodeURIComponent(challenge) +
@@ -186,17 +203,20 @@
         try {
           listenerHandle = plugins.App.addListener("appUrlOpen", function (data) {
             if (!data || !data.url) return;
-            var url;
-            try { url = new URL(data.url); } catch (e) { return; }
-            // Only handle our redirect scheme
-            if (url.protocol !== "com.atharsmy.zakat:" || url.hostname !== "oauth2callback") return;
+            var rawUrl = data.url;
+            // Only handle our OAuth redirect scheme (derived from the active client ID)
+            if (!rawUrl.startsWith(redirectScheme)) return;
 
             // Close the Custom Tab
             try { plugins.Browser.close(); } catch (e) { /* ignore */ }
 
-            var code          = url.searchParams.get("code");
-            var returnedState = url.searchParams.get("state");
-            var error         = url.searchParams.get("error");
+            // Parse query params directly from the raw URL string
+            // (new URL() doesn't parse custom scheme path-only URIs reliably)
+            var qIdx = rawUrl.indexOf("?");
+            var params = new URLSearchParams(qIdx >= 0 ? rawUrl.slice(qIdx + 1) : "");
+            var code          = params.get("code");
+            var returnedState = params.get("state");
+            var error         = params.get("error");
 
             if (error) {
               if (error === "access_denied") {
@@ -227,7 +247,7 @@
               body: new URLSearchParams({
                 grant_type:    "authorization_code",
                 code:          code,
-                redirect_uri:  PKCE_REDIRECT_URI,
+                redirect_uri:  redirectUri,
                 client_id:     clientId,
                 code_verifier: verifier,
               }).toString(),
@@ -324,10 +344,11 @@
   // Falls back to DEFAULT_MOBILE_CLIENT_ID (the pre-created "Zakat Mobile" Desktop
   // client) so sign-in works out of the box without any manual setup.
   // Returns the correct platform client ID: iOS client on iOS, Android client on Android.
-  // A stored override in localStorage (mobile_client_id) takes precedence if set.
+  // A stored override in localStorage (mobile_client_id) takes precedence if set,
+  // UNLESS it is one of the known stale Android-type IDs that don't support PKCE.
   function getMobileClientId() {
     var stored = (loadCfg().mobile_client_id || "").trim();
-    if (stored) return stored;
+    if (stored && STALE_MOBILE_CLIENT_IDS.indexOf(stored) === -1) return stored;
     var platform = (window.Capacitor && window.Capacitor.getPlatform) ? window.Capacitor.getPlatform() : "web";
     return platform === "ios" ? DEFAULT_IOS_CLIENT_ID : DEFAULT_ANDROID_CLIENT_ID;
   }
@@ -592,7 +613,12 @@
     // and exchange the auth code for a token ourselves via PKCE.
     if (isCapacitorNative()) {
       if (opts.interactive) setDriveEnabled(true);
-      return connectMobile(opts);
+      var _cid = getMobileClientId();
+      console.log("[GDrive] connectMobile clientId=" + _cid + " redirect=" + pkceRedirectUri(_cid));
+      return connectMobile(opts).catch(function (e) {
+        console.error("[GDrive] connectMobile error:", e && e.message ? e.message : String(e));
+        throw e;
+      });
     }
 
     // ── Web browser: existing GIS implicit token flow ─────────────────────────
@@ -986,6 +1012,19 @@
         .catch((e) => notify("err", "Auto-save failed: " + (e.message || e)));
     }, 2000);
   }
+
+  // ── Startup migrations ────────────────────────────────────────────────────
+  // Clear any stale Android-type client IDs stored in localStorage — they don't
+  // support PKCE authorization code flows and cause 400: invalid_request.
+  (function migrateStaleClientId() {
+    try {
+      var cfg = loadCfg();
+      if (cfg.mobile_client_id && STALE_MOBILE_CLIENT_IDS.indexOf(cfg.mobile_client_id.trim()) !== -1) {
+        console.log("[GDrive] Clearing stale Android-type client_id from localStorage:", cfg.mobile_client_id);
+        saveCfg({ mobile_client_id: "" });
+      }
+    } catch (e) { /* ignore — best-effort migration */ }
+  })();
 
   // Restore any token saved in a prior session as soon as the module loads.
   // This runs synchronously before any caller can call connect() or ensureToken().
